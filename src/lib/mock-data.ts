@@ -1,0 +1,742 @@
+// Tipos
+import { supabase, isSupabaseConfigured } from './supabaseClient';
+
+export type Perfil = 'admin' | 'manha' | 'tarde' | 'consulta';
+export type Turno = 'manha' | 'tarde' | 'ambos';
+
+export interface Usuario {
+  id: string;
+  nome: string;
+  email: string;
+  perfil: Perfil;
+  turnoVinculado?: Turno;
+  podeCadastrarPrendas: boolean;
+  podeCadastrarCampanhas: boolean;
+  status: 'ativo' | 'inativo';
+}
+
+export interface Turma {
+  id: string;
+  codigo: string;
+  nome: string;
+  turno: Turno;
+  status: 'ativo' | 'inativo';
+}
+
+export interface Aluno {
+  id: string;
+  matricula: string;
+  nome: string;
+  nome_completo: string;
+  turmaId: string;
+  codigo_turma: string;
+  turma: string;
+  ano_serie: string;
+  segmento: string;
+  turno: Turno;
+  pcd: boolean;
+  status: 'ativo' | 'inativo';
+}
+
+export interface Prenda {
+  id: string;
+  codigo_prenda: string;
+  nome: string;
+  nome_prenda: string;
+  categoria: string;
+  variacao: string;
+  pontuacaoBase: number;
+  pontuacao_base: number;
+  permite_relampago: boolean;
+  observacao: string;
+  status: 'ativo' | 'inativo';
+}
+
+export interface CampanhaRelampago {
+  id: string;
+  nome: string;
+  prendaId: string;
+  multiplicador: number;
+  dataInicial: string;
+  dataFinal: string;
+  turnoAplicacao: Turno;
+  status: 'ativa' | 'encerrada' | 'cancelada';
+  observacao: string;
+}
+
+export interface ReciboItem {
+  id: string;
+  reciboId: string;
+  prendaId: string;
+  quantidade: number;
+  pontuacaoBase: number;
+  multiplicadorAplicado: number;
+  subtotal: number;
+  campanhaAplicada: boolean;
+  campanhaRelampagoId?: string;
+  
+  // Snapshots
+  nome_prenda?: string;
+  variacao?: string;
+  campanha_relampago_aplicada?: 'sim' | 'não';
+  nome_campanha?: string;
+}
+
+export interface Recibo {
+  id: string;
+  numero: string;
+  dataHora: string;
+  alunoId: string;
+  turmaId: string;
+  turno: Turno;
+  total_pontos: number;
+  usuarioId: string;
+  status: 'ativo' | 'cancelado';
+  itens: ReciboItem[]; // Embedded for mock simplicity
+  observacao?: string;
+  
+  // Snapshots
+  aluno_nome?: string;
+  aluno_matricula?: string;
+  aluno_turma?: string;
+  aluno_turno?: string;
+  usuario_responsavel_nome?: string;
+  usuario_responsavel_perfil?: string;
+
+  // Auditoria
+  cancelado_por?: string;
+  cancelado_em?: string;
+  motivo_cancelamento?: string;
+
+  // Status de Sincronizacao
+  sincronizado?: boolean;
+  offline_id?: string;
+}
+
+// Dados Simulados
+export const mockUsuarios: Usuario[] = [
+  { id: '1', nome: 'Administrador', email: 'admin@escola.com', perfil: 'admin', podeCadastrarPrendas: true, podeCadastrarCampanhas: true, status: 'ativo' },
+  { id: '2', nome: 'João (Manhã)', email: 'joao@escola.com', perfil: 'manha', turnoVinculado: 'manha', podeCadastrarPrendas: false, podeCadastrarCampanhas: false, status: 'ativo' },
+  { id: '3', nome: 'Maria (Tarde)', email: 'maria@escola.com', perfil: 'tarde', turnoVinculado: 'tarde', podeCadastrarPrendas: false, podeCadastrarCampanhas: false, status: 'ativo' },
+];
+
+export const mockTurmas: Turma[] = [
+  // Manhã
+  { id: 't1', codigo: '11301', nome: '11301', turno: 'manha', status: 'ativo' },
+  { id: 't2', codigo: '11302', nome: '11302', turno: 'manha', status: 'ativo' },
+  { id: 't3', codigo: '11401', nome: '11401', turno: 'manha', status: 'ativo' },
+  { id: 't4', codigo: '11402', nome: '11402', turno: 'manha', status: 'ativo' },
+  { id: 't4_3', codigo: '11403', nome: '11403', turno: 'manha', status: 'ativo' },
+  { id: 't4_4', codigo: '11404', nome: '11404', turno: 'manha', status: 'ativo' },
+  { id: 't5_1', codigo: '11501', nome: '11501', turno: 'manha', status: 'ativo' },
+  { id: 't5_2', codigo: '11502', nome: '11502', turno: 'manha', status: 'ativo' },
+  { id: 't5', codigo: '11503', nome: '11503', turno: 'manha', status: 'ativo' },
+  // Tarde
+  { id: 't6', codigo: '12101', nome: '12101', turno: 'tarde', status: 'ativo' },
+  { id: 't6_2', codigo: '12102', nome: '12102', turno: 'tarde', status: 'ativo' },
+  { id: 't7', codigo: '12103', nome: '12103', turno: 'tarde', status: 'ativo' },
+  { id: 't7_4', codigo: '12104', nome: '12104', turno: 'tarde', status: 'ativo' },
+  { id: 't8_1', codigo: '12201', nome: '12201', turno: 'tarde', status: 'ativo' },
+  { id: 't8_2', codigo: '12202', nome: '12202', turno: 'tarde', status: 'ativo' },
+  { id: 't8_3', codigo: '12203', nome: '12203', turno: 'tarde', status: 'ativo' },
+  { id: 't8', codigo: '12204', nome: '12204', turno: 'tarde', status: 'ativo' },
+  { id: 't9', codigo: '12303', nome: '12303', turno: 'tarde', status: 'ativo' },
+  { id: 't10', codigo: '12304', nome: '12304', turno: 'tarde', status: 'ativo' },
+];
+
+const mockAlunosDefault: Aluno[] = [
+  { id: 'a1', matricula: '20261130101', nome: 'Ana Carolina Silva', nome_completo: 'Ana Carolina Silva', turmaId: 't1', codigo_turma: '11301', turma: '11301', ano_serie: '3º Ano', segmento: 'EFAI', turno: 'manha', pcd: false, status: 'ativo' },
+  { id: 'a2', matricula: '20261210301', nome: 'Felipe Martins', nome_completo: 'Felipe Martins', turmaId: 't7', codigo_turma: '12103', turma: '12103', ano_serie: '1º Ano', segmento: 'EFAI', turno: 'tarde', pcd: false, status: 'ativo' },
+  { id: 'a3', matricula: '20261230401', nome: 'Eduarda Lima', nome_completo: 'Eduarda Lima', turmaId: 't10', codigo_turma: '12304', turma: '12304', ano_serie: '3º Ano', segmento: 'EFAI', turno: 'tarde', pcd: false, status: 'ativo' },
+  { id: 'a4', matricula: '20261130201', nome: 'Bruno Costa', nome_completo: 'Bruno Costa', turmaId: 't2', codigo_turma: '11302', turma: '11302', ano_serie: '3º Ano', segmento: 'EFAI', turno: 'manha', pcd: false, status: 'ativo' },
+  { id: 'a5', matricula: '20261220401', nome: 'Camila Santos', nome_completo: 'Camila Santos', turmaId: 't8', codigo_turma: '12204', turma: '12204', ano_serie: '2º Ano', segmento: 'EFAI', turno: 'tarde', pcd: false, status: 'ativo' },
+  { id: 'a6', matricula: '153945', nome: 'Clarice Mozelli do Vale', nome_completo: 'Clarice Mozelli do Vale', turmaId: 't7', codigo_turma: '12103', turma: '12103', ano_serie: '1º Ano', segmento: 'EFAI', turno: 'tarde', pcd: false, status: 'ativo' },
+];
+
+const mockPrendasDefault: Prenda[] = [
+  { id: 'p1', codigo_prenda: 'BR001', nome: 'Amoeba', nome_prenda: 'Amoeba', categoria: 'Brinquedos', variacao: 'Diversas', pontuacaoBase: 200, pontuacao_base: 200, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p2', codigo_prenda: 'BR002', nome: 'Geleca / Massinha Gel / Leleca / Slime', nome_prenda: 'Geleca / Massinha Gel / Leleca / Slime', categoria: 'Brinquedos', variacao: 'Diversas', pontuacaoBase: 100, pontuacao_base: 100, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p3', codigo_prenda: 'BR003', nome: 'Peteca', nome_prenda: 'Peteca', categoria: 'Brinquedos', variacao: 'Diversas', pontuacaoBase: 100, pontuacao_base: 100, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p4', codigo_prenda: 'BR004', nome: 'Pop It / Popped pequeno ou médio', nome_prenda: 'Pop It / Popped pequeno ou médio', categoria: 'Brinquedos', variacao: 'Pequeno/Médio', pontuacaoBase: 100, pontuacao_base: 100, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p5', codigo_prenda: 'BR005', nome: 'Pop It / Popped grande', nome_prenda: 'Pop It / Popped grande', categoria: 'Brinquedos', variacao: 'Grande', pontuacaoBase: 200, pontuacao_base: 200, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p6', codigo_prenda: 'AC001', nome: 'Estojo de maquiagem', nome_prenda: 'Estojo de maquiagem', categoria: 'Acessórios', variacao: 'Diversas', pontuacaoBase: 100, pontuacao_base: 100, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p7', codigo_prenda: 'CS001', nome: 'Kit de pintura facial', nome_prenda: 'Kit de pintura facial', categoria: 'Cosméticos', variacao: 'Diversas', pontuacaoBase: 100, pontuacao_base: 100, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p8', codigo_prenda: 'BR006', nome: 'Carrinhos e bonecos pequenos', nome_prenda: 'Carrinhos e bonecos pequenos', categoria: 'Brinquedos', variacao: 'Pequenos', pontuacaoBase: 50, pontuacao_base: 50, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p9', codigo_prenda: 'BR007', nome: 'Carrinhos e bonecos médios', nome_prenda: 'Carrinhos e bonecos médios', categoria: 'Brinquedos', variacao: 'Médios', pontuacaoBase: 100, pontuacao_base: 100, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p10', codigo_prenda: 'BR008', nome: 'Carrinhos e bonecos grandes', nome_prenda: 'Carrinhos e bonecos grandes', categoria: 'Brinquedos', variacao: 'Grandes', pontuacaoBase: 300, pontuacao_base: 300, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p11', codigo_prenda: 'ES001', nome: 'Corda de pular', nome_prenda: 'Corda de pular', categoria: 'Esportes', variacao: 'Diversas', pontuacaoBase: 100, pontuacao_base: 100, permite_relampago: true, observacao: '', status: 'ativo' },
+  { id: 'p12', codigo_prenda: 'ED001', nome: 'Lousinha de madeira ou lousinha mágica', nome_prenda: 'Lousinha de madeira ou lousinha mágica', categoria: 'Educativos', variacao: 'Diversas', pontuacaoBase: 150, pontuacao_base: 150, permite_relampago: true, observacao: '', status: 'ativo' },
+];
+
+export function getLocalDataFmt(): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('fr-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(new Date());
+  } catch (e) {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+}
+
+export function isCampanhaVigente(campanha: any): boolean {
+  if (!campanha) return false;
+  
+  const status = (campanha.status || '').toLowerCase();
+  if (status !== 'ativa') return false;
+
+  const data_inicio = campanha.data_inicio || campanha.dataInicial;
+  const data_fim = campanha.data_fim || campanha.dataFinal;
+  
+  if (!data_inicio || !data_fim) return false;
+
+  const hoje = getLocalDataFmt();
+  
+  return hoje >= data_inicio && hoje <= data_fim;
+}
+
+const hoje = getLocalDataFmt();
+
+const mockCampanhasDefault: CampanhaRelampago[] = [
+  { id: 'c1', nome: 'Dobro no Pop It', prendaId: 'p4', multiplicador: 2, dataInicial: hoje, dataFinal: hoje, turnoAplicacao: 'ambos', status: 'ativa', observacao: 'Pontuação dobrada para Pop It médio/pequeno' },
+  { id: 'c2', nome: 'Tarde da Maquiagem', prendaId: 'p6', multiplicador: 3, dataInicial: hoje, dataFinal: hoje, turnoAplicacao: 'tarde', status: 'ativa', observacao: 'Triplo de pontos no estojo de maquiagem hoje!' },
+  { id: 'c3', nome: 'Semana da Peteca', prendaId: 'p3', multiplicador: 2, dataInicial: hoje, dataFinal: hoje, turnoAplicacao: 'manha', status: 'ativa', observacao: 'Dobro de pontos para peteca' },
+];
+
+const STORAGE_KEY = 'ctpm_mock_recibos_v1';
+
+const defaultRecibos: Recibo[] = [
+  {
+    id: 'r3',
+    numero: '2026-0003',
+    dataHora: new Date().toISOString(),
+    alunoId: 'a3', // Eduarda Lima
+    turmaId: 't10', // 12304
+    turno: 'tarde',
+    total_pontos: 200, 
+    usuarioId: '1',
+    status: 'ativo',
+    itens: [
+      { id: 'ri3', reciboId: 'r3', prendaId: 'p1', quantidade: 1, pontuacaoBase: 200, multiplicadorAplicado: 1, subtotal: 200, campanhaAplicada: false, nome_prenda: 'Amoeba', variacao: 'Diversas' }
+    ],
+    aluno_nome: 'Eduarda Lima',
+    aluno_matricula: '20261230401',
+    aluno_turma: '12304',
+    aluno_turno: 'tarde',
+    usuario_responsavel_nome: 'Administrador',
+    usuario_responsavel_perfil: 'admin'
+  },
+  {
+    id: 'r2',
+    numero: '2026-0002',
+    dataHora: new Date().toISOString(),
+    alunoId: 'a2', // Felipe Martins
+    turmaId: 't7', // 12103
+    turno: 'tarde',
+    total_pontos: 120, 
+    usuarioId: '1',
+    status: 'ativo',
+    itens: [
+      { id: 'ri2', reciboId: 'r2', prendaId: 'p8', quantidade: 2, pontuacaoBase: 50, multiplicadorAplicado: 1, subtotal: 100, campanhaAplicada: false, nome_prenda: 'Carrinhos e bonecos pequenos', variacao: 'Pequenos' }
+    ],
+    aluno_nome: 'Felipe Martins',
+    aluno_matricula: '20261210301',
+    aluno_turma: '12103',
+    aluno_turno: 'tarde',
+    usuario_responsavel_nome: 'Administrador',
+    usuario_responsavel_perfil: 'admin'
+  },
+  {
+    id: 'r1',
+    numero: '2026-0001',
+    dataHora: new Date().toISOString(),
+    alunoId: 'a1', // Ana Carolina Silva
+    turmaId: 't1', // 11301
+    turno: 'manha',
+    total_pontos: 50, 
+    usuarioId: '1',
+    status: 'ativo',
+    itens: [
+      { id: 'ri1', reciboId: 'r1', prendaId: 'p8', quantidade: 1, pontuacaoBase: 50, multiplicadorAplicado: 1, subtotal: 50, campanhaAplicada: false, nome_prenda: 'Carrinhos e bonecos pequenos', variacao: 'Pequenos' } 
+    ],
+    aluno_nome: 'Ana Carolina Silva',
+    aluno_matricula: '20261130101',
+    aluno_turma: '11301',
+    aluno_turno: 'manha',
+    usuario_responsavel_nome: 'Administrador',
+    usuario_responsavel_perfil: 'admin'
+  }
+];
+
+const getStoredAlunos = (): Aluno[] => {
+  if (typeof window === 'undefined') return mockAlunosDefault;
+  try {
+    const val = localStorage.getItem('ctpm_alunos_v1');
+    if (val) return JSON.parse(val);
+    localStorage.setItem('ctpm_alunos_v1', JSON.stringify(mockAlunosDefault));
+  } catch (e) {
+    console.error('Error reading students storage', e);
+  }
+  return mockAlunosDefault;
+};
+
+const getStoredPrendas = (): Prenda[] => {
+  if (typeof window === 'undefined') return mockPrendasDefault;
+  try {
+    const val = localStorage.getItem('ctpm_prendas_v1');
+    if (val) return JSON.parse(val);
+    localStorage.setItem('ctpm_prendas_v1', JSON.stringify(mockPrendasDefault));
+  } catch (e) {
+    console.error('Error reading prendas storage', e);
+  }
+  return mockPrendasDefault;
+};
+
+const getStoredCampanhas = (): CampanhaRelampago[] => {
+  if (typeof window === 'undefined') return mockCampanhasDefault;
+  try {
+    const val = localStorage.getItem('ctpm_campanhas_v1');
+    if (val) return JSON.parse(val);
+    localStorage.setItem('ctpm_campanhas_v1', JSON.stringify(mockCampanhasDefault));
+  } catch (e) {
+    console.error('Error reading campaigns storage', e);
+  }
+  return mockCampanhasDefault;
+};
+
+const getStoredRecibos = (): Recibo[] => {
+  if (typeof window === 'undefined') return defaultRecibos;
+  try {
+    const val = localStorage.getItem(STORAGE_KEY);
+    if (val) {
+      return JSON.parse(val);
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultRecibos));
+  } catch (e) {
+    console.error('Failure reading stored recibos', e);
+  }
+  return defaultRecibos;
+};
+
+export let mockAlunos: Aluno[] = getStoredAlunos();
+export let mockPrendas: Prenda[] = getStoredPrendas();
+export let mockCampanhas: CampanhaRelampago[] = getStoredCampanhas();
+export let mockRecibos: Recibo[] = getStoredRecibos();
+
+export function saveAlunos(updated: Aluno[]) {
+  mockAlunos = updated;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('ctpm_alunos_v1', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
+export function savePrendas(updated: Prenda[]) {
+  mockPrendas = updated;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('ctpm_prendas_v1', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
+export function saveCampanhas(updated: CampanhaRelampago[]) {
+  mockCampanhas = updated;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('ctpm_campanhas_v1', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
+export interface Lancamento {
+  id: string;
+  numero_recibo: string;
+  data_lancamento: string;
+  aluno_id: string;
+  matricula: string;
+  nome_aluno: string;
+  turma: string;
+  ano_serie: string;
+  turno: string;
+  prenda_id: string;
+  nome_prenda: string;
+  tipo_prenda: 'regular' | 'avulsa';
+  quantidade: number;
+  pontos_base: number;
+  prenda_relampago: 'sim' | 'não';
+  campanha_relampago_id?: string;
+  multiplicador: number;
+  total_pontos: number;
+  observacao?: string;
+  usuario_responsavel: string;
+  status: 'valido' | 'cancelado';
+  created_at: string;
+  updated_at: string;
+
+  // Auditoria de cancelamento
+  cancelado_por?: string;
+  cancelado_em?: string;
+  motivo_cancelamento?: string;
+
+  // Status de Sincronizacao
+  sincronizado?: boolean;
+}
+
+const getStoredLancamentos = (): Lancamento[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const val = localStorage.getItem('ctpm_lancamentos_v1');
+    if (val) return JSON.parse(val);
+  } catch (e) {
+    console.error('Error reading lancamentos storage', e);
+  }
+  return [];
+};
+
+export let mockLancamentos: Lancamento[] = getStoredLancamentos();
+
+export function saveLancamentos(updated: Lancamento[]) {
+  mockLancamentos = updated;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('ctpm_lancamentos_v1', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
+export function generateNextReceiptNumber(): string {
+  const recibos = getStoredRecibos();
+  let maxSeq = 0;
+  recibos.forEach(r => {
+    // Matches 2026-XXXX or legacy 2026XXXXX
+    const cleanNumStr = r.numero.replace('2026-', '').replace('2026', '');
+    const num = parseInt(cleanNumStr, 10);
+    if (!isNaN(num) && num > maxSeq) {
+      maxSeq = num;
+    }
+  });
+  const nextSeq = maxSeq + 1;
+  return `2026-${String(nextSeq).padStart(4, '0')}`;
+}
+
+export function cancelMockRecibo(reciboId: string, canceladoPor: string, motivo: string) {
+  const canceladoEm = new Date().toISOString();
+
+  mockRecibos = mockRecibos.map(r => r.id === reciboId ? { 
+    ...r, 
+    status: 'cancelado' as const,
+    cancelado_por: canceladoPor,
+    cancelado_em: canceladoEm,
+    motivo_cancelamento: motivo
+  } : r);
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(mockRecibos));
+    } catch (e) {
+      console.error('Failure saving receipts after cancellation', e);
+    }
+  }
+
+  // Also cancel lancamentos associated with this receipt
+  const receipt = mockRecibos.find(r => r.id === reciboId);
+  if (receipt) {
+    const updatedLancamentos = mockLancamentos.map(l => 
+      l.numero_recibo === receipt.numero ? { 
+        ...l, 
+        status: 'cancelado' as const, 
+        cancelado_por: canceladoPor,
+        cancelado_em: canceladoEm,
+        motivo_cancelamento: motivo,
+        updated_at: canceladoEm 
+      } : l
+    );
+    saveLancamentos(updatedLancamentos);
+    
+    // Also try Supabase cancel if configured
+    try {
+      supabase.from('lancamentos').update({ 
+        status: 'cancelado', 
+        cancelado_por: canceladoPor,
+        cancelado_em: canceladoEm,
+        motivo_cancelamento: motivo,
+        updated_at: canceladoEm 
+      }).eq('numero_recibo', receipt.numero).then(res => {
+        if (res.error) console.error('Supabase cancel lancamento error:', res.error);
+      });
+
+      supabase.from('recibos').update({ 
+        status: 'cancelado',
+        cancelado_por: canceladoPor,
+        cancelado_em: canceladoEm,
+        motivo_cancelamento: motivo
+      }).eq('numero_recibo', receipt.numero).then(res => {
+        if (res.error) console.error('Supabase cancel recibo error:', res.error);
+      });
+    } catch (e) {
+      console.warn('Supabase not available for cancel:', e);
+    }
+  }
+}
+
+export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Promise<Recibo> {
+    let onlineSuccess = false;
+    let newRecibo: Recibo | null = null;
+    const isOnline = isSupabaseConfigured;
+
+    if (isOnline) {
+      try {
+        const itensEnvio = (recibo.itens || []).map(item => {
+          const isRelampago = item.campanhaAplicada || item.multiplicadorAplicado > 1;
+          return {
+            prenda_id: item.prendaId === 'avulsa' ? null : item.prendaId,
+            nome_prenda: item.nome_prenda || 'Prenda Avulsa',
+            tipo_prenda: item.prendaId === 'avulsa' ? 'avulsa' : 'regular',
+            quantidade: item.quantidade,
+            pontos_base: item.pontuacaoBase,
+            prenda_relampago: isRelampago ? 'sim' : 'não',
+            multiplicador: item.multiplicadorAplicado,
+            total_pontos: item.subtotal,
+            campanha_relampago_id: item.campanhaRelampagoId || null
+          };
+        });
+
+        // Chamamos a RPC que processará a inserção de forma transacional e atômica
+        const { data, error } = await supabase.rpc('lancar_recibo_transacional', {
+          p_aluno_id: recibo.alunoId,
+          p_aluno_matricula: recibo.aluno_matricula || '',
+          p_aluno_nome: recibo.aluno_nome || '',
+          p_aluno_turma: recibo.aluno_turma || '',
+          p_turno_aluno: recibo.turno,
+          p_total_pontos: recibo.total_pontos,
+          p_usuario_id: recibo.usuarioId,
+          p_usuario_nome: recibo.usuario_responsavel_nome || 'Operador',
+          p_usuario_perfil: recibo.usuario_responsavel_perfil || 'admin',
+          p_observacao: recibo.observacao || '',
+          p_itens: itensEnvio
+        });
+
+        if (error) {
+          console.error('Supabase transactional write failed, falling back to local storage:', error);
+        } else if (data && data.numero_recibo) {
+          const nextNum = data.numero_recibo;
+          const officialId = data.id || `r_${Date.now()}`;
+          
+          newRecibo = {
+            ...recibo,
+            id: officialId,
+            numero: nextNum,
+            sincronizado: true
+          };
+          onlineSuccess = true;
+        }
+      } catch (e) {
+        console.warn('Network or database exception in addMockRecibo transaction:', e);
+      }
+    }
+
+    if (!onlineSuccess || !newRecibo) {
+      const tempSeq = generateNextReceiptNumber();
+      newRecibo = {
+        ...recibo,
+        id: `r_off_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        numero: tempSeq,
+        sincronizado: false,
+        offline_id: `rec_off_${Date.now()}`
+      };
+    }
+
+    // Salva no mockRecibos (Cache Local)
+    mockRecibos = [newRecibo, ...mockRecibos];
+    if (typeof window !== 'undefined') {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(mockRecibos));
+        } catch (e) {
+            console.error('Failure writing stored recibos', e);
+        }
+    }
+
+    // Processa também os lançamentos correspondentes para cache local
+    const nextNum = newRecibo.numero;
+    const newLancamentosList: Lancamento[] = (recibo.itens || []).map(item => {
+      const matchPrenda = mockPrendas.find(p => p.id === item.prendaId);
+      const isRelampago = item.campanhaAplicada || item.multiplicadorAplicado > 1;
+      
+      return {
+        id: `lan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        numero_recibo: nextNum,
+        data_lancamento: new Date().toISOString().split('T')[0],
+        aluno_id: recibo.alunoId,
+        matricula: recibo.aluno_matricula || '',
+        nome_aluno: recibo.aluno_nome || '',
+        turma: recibo.aluno_turma || '',
+        ano_serie: 'EFAI',
+        turno: recibo.turno,
+        prenda_id: item.prendaId,
+        nome_prenda: item.nome_prenda || matchPrenda?.nome_prenda || matchPrenda?.nome || 'Prenda Avulsa',
+        tipo_prenda: item.prendaId === 'avulsa' ? 'avulsa' : 'regular',
+        quantidade: item.quantidade,
+        pontos_base: item.pontuacaoBase,
+        prenda_relampago: isRelampago ? 'sim' : 'não',
+        campanha_relampago_id: item.campanhaRelampagoId || undefined,
+        multiplicador: item.multiplicadorAplicado,
+        total_pontos: item.subtotal,
+        observacao: recibo.observacao,
+        usuario_responsavel: recibo.usuario_responsavel_nome || 'Operador',
+        status: 'valido',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        sincronizado: onlineSuccess
+      };
+    });
+
+    saveLancamentos([...newLancamentosList, ...mockLancamentos]);
+
+    // Caso o salvamento tenha sido offline, podemos depois rodar um sync de background.
+    // Para fins do mock, se o Supabase não estava disponível mas o fluxo não falhou,
+    // garantimos o registro local e o retorno do recibo com status offline.
+    return newRecibo;
+}
+
+// Calculadores Reativos de Estatisticas do Dashboard
+export function getDashboardStats(perfil: Perfil, turnoVinculado?: Turno) {
+  const activeRecibos = mockRecibos.filter(r => r.status === 'ativo');
+  
+  // Filtro por turno se não for admin
+  const filtered = perfil === 'admin'
+    ? activeRecibos
+    : activeRecibos.filter(r => r.aluno_turno === turnoVinculado || r.turno === turnoVinculado);
+
+  const total_recibos = filtered.length;
+  const total_pontos = filtered.reduce((acc, r) => acc + r.total_pontos, 0);
+
+  // Turma Destaque
+  const classPoints: Record<string, { pontos: number; turno: string }> = {};
+  filtered.forEach(r => {
+    const tId = r.aluno_turma || r.turmaId;
+    if (tId) {
+      if (!classPoints[tId]) {
+        classPoints[tId] = { pontos: 0, turno: r.aluno_turno || r.turno };
+      }
+      classPoints[tId].pontos += r.total_pontos;
+    }
+  });
+
+  const highlights = Object.entries(classPoints).map(([codigo, val]) => ({
+    codigo,
+    pontos: val.pontos,
+    turno: val.turno
+  }));
+  highlights.sort((a, b) => b.pontos - a.pontos);
+
+  const topClass = highlights[0];
+  const turmaDestaque = topClass
+    ? { nome: topClass.codigo, turno: topClass.turno }
+    : { nome: '', turno: '' };
+
+  return {
+    total_pontos,
+    total_recibos,
+    turmaDestaque
+  };
+}
+
+// Calculadores de Ranking Reativos
+export function getRankingAlunos(turnoFilter?: string) {
+  const activeRecibos = mockRecibos.filter(r => r.status === 'ativo');
+  const filtered = (turnoFilter && turnoFilter !== 'geral')
+    ? activeRecibos.filter(r => (r.aluno_turno || r.turno) === turnoFilter)
+    : activeRecibos;
+
+  const studentPoints: Record<string, { id: string; nome: string; turma: string; turno: string; pontos: number }> = {};
+  filtered.forEach(r => {
+    const m = r.aluno_matricula || r.alunoId;
+    if (m) {
+      if (!studentPoints[m]) {
+        studentPoints[m] = {
+          id: r.id,
+          nome: r.aluno_nome || 'Desconhecido',
+          turma: r.aluno_turma || r.turmaId,
+          turno: r.aluno_turno || r.turno,
+          pontos: 0
+        };
+      }
+      studentPoints[m].pontos += r.total_pontos;
+    }
+  });
+
+  const list = Object.entries(studentPoints).map(([matricula, s]) => ({
+    aluno_id: s.id,
+    matricula,
+    nome_completo: s.nome,
+    codigo_turma: s.turma,
+    turno: s.turno,
+    total_pontos: s.pontos
+  }));
+
+  return list.sort((a, b) => b.total_pontos - a.total_pontos).slice(0, 10);
+}
+
+export function getRankingTurmas(turnoFilter?: string) {
+  const activeRecibos = mockRecibos.filter(r => r.status === 'ativo');
+  const filtered = (turnoFilter && turnoFilter !== 'geral')
+    ? activeRecibos.filter(r => (r.aluno_turno || r.turno) === turnoFilter)
+    : activeRecibos;
+
+  const classPoints: Record<string, { total_pontos: number; turno: string }> = {};
+  filtered.forEach(r => {
+    const cCode = r.aluno_turma || r.turmaId;
+    if (cCode) {
+      const key = `${cCode}`;
+      if (!classPoints[key]) {
+        classPoints[key] = {
+          total_pontos: 0,
+          turno: r.aluno_turno || r.turno
+        };
+      }
+      classPoints[key].total_pontos += r.total_pontos;
+    }
+  });
+
+  const list = Object.entries(classPoints).map(([code, v]) => ({
+    codigo_turma: code,
+    turno: v.turno,
+    total_pontos: v.total_pontos
+  }));
+
+  return list.sort((a, b) => b.total_pontos - a.total_pontos);
+}
+
+export function getRankingTurnos() {
+  const activeRecibos = mockRecibos.filter(r => r.status === 'ativo');
+  const turnos = { manha: 0, tarde: 0 };
+  activeRecibos.forEach(r => {
+    const turno = (r.aluno_turno || r.turno || 'manha').toLowerCase();
+    if (turno === 'manha' || turno === 'manhã') {
+      turnos.manha += r.total_pontos;
+    } else if (turno === 'tarde') {
+      turnos.tarde += r.total_pontos;
+    }
+  });
+  return [
+    { turno: 'manha', total_pontos: turnos.manha },
+    { turno: 'tarde', total_pontos: turnos.tarde }
+  ];
+}
