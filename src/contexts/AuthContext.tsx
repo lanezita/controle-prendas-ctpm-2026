@@ -39,6 +39,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   useEffect(() => {
+    // Verificação preventiva de sessão para mitigar e resolver erros de "Refresh Token Not Found"
+    const verificarSessaoInicial = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn('Alerta na verificação preventiva de sessão:', error.message);
+          if (
+            error.message?.includes('Refresh Token') || 
+            error.message?.includes('invalid_grant') || 
+            error.message?.includes('not found')
+          ) {
+            // Limpa as chaves locais do Supabase para evitar loops e destravar o cliente
+            for (const key of Object.keys(localStorage)) {
+              if (key.startsWith('sb-')) {
+                localStorage.removeItem(key);
+              }
+            }
+            await supabase.auth.signOut();
+            setState({ user: null, profile: null, loading: false });
+          }
+        }
+      } catch (err) {
+        console.error('Falha ao verificar sessão inicial preventivamente:', err);
+      }
+    };
+
+    verificarSessaoInicial();
+
     // O onAuthStateChange do Supabase já busca a sessão inicial e monitora mudanças.
     // Usar um estado único (setState) garante que user e profile sejam atualizados 
     // atomicamente antes de liberar o loading.
@@ -65,6 +93,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Se o erro for de autenticação ou token, desloga o usuário
           if (error.message.includes('Refresh Token Not Found')) {
             console.warn('Sessão expirada. Redirecionando...');
+            // Limpa chaves para evitar lock local
+            for (const key of Object.keys(localStorage)) {
+              if (key.startsWith('sb-')) {
+                localStorage.removeItem(key);
+              }
+            }
+            await supabase.auth.signOut();
             setState({ user: null, profile: null, loading: false });
             return;
           }
@@ -84,7 +119,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    try {
+      // Limpeza imediata no localStorage para evitar travamentos locais de token e sessões expiradas
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      }
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Erro ao chamar supabase.auth.signOut(), prosseguindo para limpeza local:', err);
+    } finally {
+      setState({ user: null, profile: null, loading: false });
+    }
   };
 
   const contextValue = useMemo(() => ({

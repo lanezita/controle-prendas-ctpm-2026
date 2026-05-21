@@ -21,7 +21,7 @@ import { Usuarios } from './pages/Usuarios';
 import { Turmas } from './pages/Turmas';
 
 function AppRoutes() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, logout } = useAuth();
 
   if (loading) {
     return (
@@ -45,7 +45,7 @@ function AppRoutes() {
             Por favor, entre em contato com o administrador da gincana se achar que é um erro.
           </p>
           <button 
-            onClick={() => supabase.auth.signOut()}
+            onClick={() => logout()}
             className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors cursor-pointer"
           >
             Sair da Conta
