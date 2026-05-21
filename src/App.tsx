@@ -18,6 +18,7 @@ import { Alunos } from './pages/Alunos';
 import { Prendas } from './pages/Prendas';
 import { Campanhas } from './pages/Campanhas';
 import { Usuarios } from './pages/Usuarios';
+import { Turmas } from './pages/Turmas';
 
 function AppRoutes() {
   const { user, profile, loading } = useAuth();
@@ -70,7 +71,7 @@ function AppRoutes() {
         
         {/* View de Cadastros simplificada para V1 */}
         <Route path="campanhas" element={<Campanhas />} />
-        <Route path="turmas" element={<Placeholder title="Turmas" />} />
+        <Route path="turmas" element={<Turmas />} />
         <Route path="usuarios" element={<Usuarios />} />
       </Route>
 
