@@ -242,13 +242,13 @@ export function ReciboView() {
             RESPONSÁVEL PELO RECEBIMENTO
           </p>
           <p className="text-[10px] md:text-xs text-slate-500 uppercase font-semibold mt-0.5">
-            Escola (Recebedor)
+            CTPM GAMELEIRA
           </p>
         </div>
 
         <div className="text-center w-64 border-t border-slate-800 pt-2 shrink-0">
-          <p className="text-xs md:text-sm">&nbsp;</p>
-          <p className="text-[10px] md:text-xs text-slate-500 uppercase font-semibold mt-0.5">
+           <p className="text-xs md:text-sm font-bold text-slate-800 uppercase">
+        
             Responsável pela entrega / Entregador
           </p>
         </div>
