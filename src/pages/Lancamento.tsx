@@ -228,6 +228,19 @@ export function Lancamento() {
     );
   };
 
+  const getTurnoReferencia = () => {
+    if (alunoSelecionado) {
+      return alunoSelecionado.turno;
+    }
+    if (profile?.turno && profile.turno !== 'ambos') {
+      return profile.turno;
+    }
+    if (profile?.perfil === 'tarde') {
+      return 'tarde';
+    }
+    return 'manha';
+  };
+
   const handleAdicionarItem = () => {
     if (!alunoSelecionado || quantidade <= 0) return;
 
@@ -487,9 +500,14 @@ export function Lancamento() {
                   {itens.map(item => (
                     <div key={item.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2 min-w-0 w-full max-w-full">
                       <div className="flex items-start justify-between gap-3 min-w-0 w-full">
-                        <div className="flex items-start flex-wrap gap-1 leading-normal font-extrabold text-slate-800 break-words whitespace-normal text-xs min-w-0 flex-1 max-w-full">
+                        <div className="flex items-start flex-wrap gap-1.5 leading-normal font-extrabold text-slate-800 break-words whitespace-normal text-xs min-w-0 flex-1 max-w-full">
                           <span className="break-words max-w-full whitespace-normal leading-tight">{item.prendaNome}</span>
-                          {item.campanhaAplicada && <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0 inline-block align-text-bottom mt-0.5" title="Campanha Ativa" />}
+                          {item.campanhaAplicada && (
+                            <span className="inline-flex items-center gap-0.5 bg-amber-500 text-white font-black text-[8px] px-1.5 py-0.5 rounded-full uppercase tracking-wider select-none shrink-0 leading-none">
+                              <Zap className="h-2 w-2 fill-white" />
+                              <span>RELÂMPAGO {item.multiplicadorAplicado}x</span>
+                            </span>
+                          )}
                         </div>
                         <span className="shrink-0 text-slate-950 font-black text-right text-xs whitespace-nowrap pt-0.5">
                           {formatPoints(item.subtotal)} PTS
@@ -542,9 +560,14 @@ export function Lancamento() {
                       {itens.map(item => (
                         <tr key={item.id} className="text-slate-700">
                           <td className="px-4 py-3 font-bold break-words whitespace-normal min-w-0 max-w-xs md:max-w-md">
-                            <div className="flex items-center flex-wrap gap-1 leading-normal">
+                            <div className="flex items-center flex-wrap gap-1.5 leading-normal">
                               <span className="break-words whitespace-normal leading-tight">{item.prendaNome}</span>
-                              {item.campanhaAplicada && <Zap className="h-3 w-3 text-amber-500 shrink-0" title="Campanha Ativa" />}
+                              {item.campanhaAplicada && (
+                                <span className="inline-flex items-center gap-0.5 bg-amber-500 text-white font-black text-[8px] px-1.5 py-0.5 rounded-full uppercase tracking-wider select-none shrink-0 leading-none">
+                                  <Zap className="h-2 w-2 fill-white shrink-0" />
+                                  <span>RELÂMPAGO {item.multiplicadorAplicado}x</span>
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 py-3 text-center font-bold w-16">{item.quantidade}</td>
@@ -689,7 +712,7 @@ export function Lancamento() {
           </div>
 
           {/* Card Adicionar Item */}
-          <div className={`bg-white p-5 rounded-xl shadow-sm border border-slate-200 transition-opacity ${!alunoSelecionado ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className={`bg-white p-5 rounded-xl shadow-sm border border-slate-200 transition-opacity`}>
             <h2 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 text-sm uppercase tracking-widest flex justify-between items-center">
               <span>2. Prenda</span>
               <label className="flex items-center text-[10px] font-black uppercase tracking-widest cursor-pointer text-indigo-600 select-none">
@@ -755,28 +778,75 @@ export function Lancamento() {
                     >
                       <option value="">{loadingPrendas ? 'Carregando prendas...' : errorPrendas || '-- Selecione ou busque acima --'}</option>
                       {prendas.filter(p => !filtraPrenda.trim() || p.nome_prenda.toLowerCase().includes(filtraPrenda.toLowerCase()) || (p.variacao || '').toLowerCase().includes(filtraPrenda.toLowerCase())).map(p => {
-                        const campanha = alunoSelecionado ? getCampanhaAtiva(p.id, alunoSelecionado.turno) : null;
-                        const label = p.variacao 
+                        const turnoRef = getTurnoReferencia();
+                        const campanha = getCampanhaAtiva(p.id, turnoRef);
+                        const labelBase = p.variacao 
                           ? `${p.nome_prenda} — ${p.variacao} — ${p.pontuacao_base} pts`
                           : `${p.nome_prenda} — ${p.pontuacao_base} pts`;
+                        
+                        const label = campanha 
+                          ? `${labelBase} ⚡ CAMPANHA ${campanha.multiplicador}x`
+                          : labelBase;
                           
                         return (
                           <option key={p.id} value={p.id}>
-                            {label} {campanha ? '⚡' : ''}
+                            {label}
                           </option>
-                        )
+                        );
                       })}
                     </select>
                     {errorPrendas && (
                       <p className="mt-1 text-[10px] font-bold text-red-600">{errorPrendas}</p>
                     )}
-                    {prendaId && alunoSelecionado && (() => {
-                      const c = getCampanhaAtiva(prendaId, alunoSelecionado.turno);
+                    {prendaId && (() => {
+                      const turnoRef = getTurnoReferencia();
+                      const c = getCampanhaAtiva(prendaId, turnoRef);
                       if (!c) return null;
+                      
+                      const formatoData = (dataStr: string) => {
+                        if (!dataStr) return '';
+                        const partes = dataStr.split('-');
+                        if (partes.length === 3) {
+                          return `${partes[2]}/${partes[1]}/${partes[0]}`;
+                        }
+                        return dataStr;
+                      };
+
+                      const turnoDesc = c.turno_aplicacao === 'ambos' 
+                        ? 'Todos os turnos (Manhã e Tarde)' 
+                        : (c.turno_aplicacao.toLowerCase() === 'manha' ? 'Turno Manhã' : 'Turno Tarde');
+
                       return (
-                        <div className="mt-2 text-[10px] font-black text-amber-700 flex items-center bg-amber-50 p-2 rounded border border-amber-200 uppercase tracking-widest">
-                          <Zap className="h-3 w-3 mr-1.5 shrink-0" />
-                          <span>Campanha relâmpago ativa: {c.nome_campanha} — multiplicador {c.multiplicador}x</span>
+                        <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs text-amber-900 shadow-sm animate-fade-in text-left">
+                          <div className="flex items-center gap-1.5 font-extrabold text-amber-800 uppercase tracking-wider">
+                            <Zap className="h-4 w-4 text-amber-500 fill-amber-500 shrink-0" />
+                            <span>⚡ Campanha relâmpago ativa</span>
+                          </div>
+                          
+                          <p className="font-semibold text-amber-700">
+                            Esta prenda está valendo {c.multiplicador}x pontos neste período.
+                          </p>
+                          
+                          <div className="pt-1.5 border-t border-amber-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-medium">
+                            <div className="truncate">
+                              <strong className="text-amber-800">Campanha:</strong> {c.nome_campanha || c.nome}
+                            </div>
+                            <div>
+                              <strong className="text-amber-800">Multiplicador:</strong> {c.multiplicador}x
+                            </div>
+                            <div>
+                              <strong className="text-amber-850">Turno Aplicável:</strong> {turnoDesc}
+                            </div>
+                            <div>
+                              <strong className="text-amber-800">Vigência:</strong> {formatoData(c.data_inicio || c.dataInicial)} até {formatoData(c.data_fim || c.dataFinal)}
+                            </div>
+                          </div>
+                          
+                          {(c.observacao || c.observacao_geral) && (
+                            <div className="mt-1 pt-1.5 border-t border-amber-100 text-[10px] italic text-amber-700 leading-normal">
+                              <strong className="text-[10px] font-bold not-italic text-amber-850 font-sans">Observação:</strong> {c.observacao || c.observacao_geral}
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -795,10 +865,11 @@ export function Lancamento() {
                 />
               </div>
 
-              {((!isAvulsa && prendaId) || (isAvulsa && avulsaNome.trim())) && alunoSelecionado && (() => {
+              {((!isAvulsa && prendaId) || (isAvulsa && avulsaNome.trim())) && (() => {
                 const selectedPrenda = isAvulsa ? null : prendas.find(x => x.id === prendaId);
                 const basePts = isAvulsa ? avulsaPontos : (selectedPrenda?.pontuacao_base || 0);
-                const campanha = isAvulsa ? null : getCampanhaAtiva(prendaId, alunoSelecionado.turno);
+                const turnoRef = getTurnoReferencia();
+                const campanha = isAvulsa ? null : getCampanhaAtiva(prendaId, turnoRef);
                 const multiplicador = campanha ? campanha.multiplicador : 1;
                 const qtd = quantidade || 1;
                 const subtotal = qtd * basePts * multiplicador;
@@ -815,10 +886,10 @@ export function Lancamento() {
 
               <button 
                 onClick={handleAdicionarItem}
-                disabled={isAvulsa ? (!avulsaNome.trim() || avulsaPontos <= 0 || quantidade < 1) : (!prendaId || quantidade < 1)}
-                className="w-full flex justify-center items-center bg-slate-900 text-white px-4 py-3 rounded-xl hover:bg-slate-800 disabled:opacity-50 mt-2 transition-all font-black uppercase text-xs tracking-widest shadow-lg shadow-slate-100"
+                disabled={!alunoSelecionado || (isAvulsa ? (!avulsaNome.trim() || avulsaPontos <= 0 || quantidade < 1) : (!prendaId || quantidade < 1))}
+                className="w-full flex justify-center items-center bg-slate-900 text-white px-4 py-3 rounded-xl hover:bg-slate-800 disabled:opacity-50 mt-2 transition-all font-black uppercase text-xs tracking-widest shadow-lg shadow-slate-100 disabled:cursor-not-allowed"
               >
-                <Plus className="h-4 w-4 mr-2" /> Adicionar
+                <Plus className="h-4 w-4 mr-2" /> {alunoSelecionado ? 'Adicionar' : 'Identifique o aluno primeiro'}
               </button>
             </div>
           </div>
@@ -860,9 +931,14 @@ export function Lancamento() {
                     itens.map(item => (
                       <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-5 py-4">
-                          <div className="font-bold text-slate-800 flex items-center">
-                            {item.prendaNome}
-                            {item.campanhaAplicada && <Zap className="h-3.5 w-3.5 text-amber-500 ml-2" />}
+                          <div className="font-bold text-slate-800 flex items-center flex-wrap gap-2">
+                            <span>{item.prendaNome}</span>
+                            {item.campanhaAplicada && (
+                              <span className="inline-flex items-center gap-1 bg-amber-500 text-white font-black text-[9px] px-2.5 py-0.5 rounded-full uppercase tracking-wider select-none shrink-0 leading-none">
+                                <Zap className="h-2.5 w-2.5 fill-white shrink-0" />
+                                <span>RELÂMPAGO {item.multiplicadorAplicado}x</span>
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-5 py-4 text-center font-bold text-slate-700">{item.quantidade}</td>
