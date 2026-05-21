@@ -1,9 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { mockRecibos, mockAlunos, mockTurmas, mockUsuarios, cancelMockRecibo } from '../lib/mock-data';
+import { 
+  mockRecibos, 
+  mockAlunos, 
+  mockTurmas, 
+  cancelMockRecibo, 
+  SolicitacaoCancelamento, 
+  mockSolicitacoes, 
+  addSolicitacaoCancelamento, 
+  processarAnaliseSolicitacao, 
+  fetchSolicitacoesCancelamentoFromDB 
+} from '../lib/mock-data';
 import { formatPoints } from '../lib/utils';
-import { Search, Eye, Ban, Filter, AlertCircle } from 'lucide-react';
+import { Search, Eye, Ban, Filter, AlertCircle, Shield, Check, X } from 'lucide-react';
 
 export function ConsultaRecibos() {
   const { profile } = useAuth();
@@ -11,13 +21,36 @@ export function ConsultaRecibos() {
 
   const [busca, setBusca] = useState('');
   const [recibosList, setRecibosList] = useState(mockRecibos);
+  const [solicitacoesList, setSolicitacoesList] = useState<SolicitacaoCancelamento[]>(mockSolicitacoes);
 
-  // Estados para Auditoria de Cancelamento
+  // Carrega as solicitações do Supabase se disponível ou lê do cache local
+  useEffect(() => {
+    async function loadSolicitacoes() {
+      const res = await fetchSolicitacoesCancelamentoFromDB();
+      setSolicitacoesList([...res]);
+    }
+    loadSolicitacoes();
+  }, [recibosList]);
+
+  // Estados para Auditoria de Cancelamento Direto do Admin
   const [modalCancelamentoOpen, setModalCancelamentoOpen] = useState(false);
   const [reciboParaCancelar, setReciboParaCancelar] = useState<{ id: string, numero: string } | null>(null);
   const [motivoCancelamento, setMotivoCancelamento] = useState('');
   const [erroCancelamento, setErroCancelamento] = useState('');
 
+  // Estados para Solicitação de Cancelamento do Operador
+  const [modalSolicitarOpen, setModalSolicitarOpen] = useState(false);
+  const [reciboParaSolicitar, setReciboParaSolicitar] = useState<any>(null);
+  const [motivoSolicitacao, setMotivoSolicitacao] = useState('');
+  const [erroSolicitacao, setErroSolicitacao] = useState('');
+  const [alertaDuplicidade, setAlertaDuplicidade] = useState('');
+
+  // Estados para Análise do Admin
+  const [modalAnaliseOpen, setModalAnaliseOpen] = useState(false);
+  const [solicitacaoEmAnalise, setSolicitacaoEmAnalise] = useState<SolicitacaoCancelamento | null>(null);
+  const [observacaoAnalise, setObservacaoAnalise] = useState('');
+
+  // Handler para cancelar diretamente (admin)
   const handleCancelarClick = (id: string, numero: string) => {
     setReciboParaCancelar({ id, numero });
     setMotivoCancelamento('');
@@ -31,7 +64,7 @@ export function ConsultaRecibos() {
       return;
     }
     if (reciboParaCancelar && profile) {
-      const canceladoPor = `${profile.nome} (${profile.perfil === 'admin' ? 'Administrador' : profile.perfil === 'manha' ? 'Operador Manhã' : 'Operador Tarde'})`;
+      const canceladoPor = `${profile.nome} (Administrador)`;
       cancelMockRecibo(reciboParaCancelar.id, canceladoPor, motivoCancelamento.trim());
       setRecibosList([...mockRecibos]);
       setModalCancelamentoOpen(false);
@@ -39,11 +72,91 @@ export function ConsultaRecibos() {
       setMotivoCancelamento('');
     }
   };
-  
-  // Apenas admin vê todos, outros veem apenas do seu turno
-  const baseRecibos = profile?.perfil === 'admin' 
+
+  // Handler para solicitar cancelamento (operadores)
+  const handleSolicitarClick = (recibo: any) => {
+    // Validar duplicidade nas solicitações ativas
+    const temPendente = solicitacoesList.some(s => s.recibo_id === recibo.id && s.status === 'pendente');
+    if (temPendente) {
+      setAlertaDuplicidade('Já existe uma solicitação de cancelamento pendente para este recibo.');
+      return;
+    }
+    setAlertaDuplicidade('');
+    setReciboParaSolicitar(recibo);
+    setMotivoSolicitacao('');
+    setErroSolicitacao('');
+    setModalSolicitarOpen(true);
+  };
+
+  const confirmarSolicitacao = async () => {
+    if (!motivoSolicitacao.trim()) {
+      setErroSolicitacao('O motivo do cancelamento é obrigatório.');
+      return;
+    }
+    if (motivoSolicitacao.trim().length < 10) {
+      setErroSolicitacao('O motivo deve conter no mínimo 10 caracteres.');
+      return;
+    }
+    if (reciboParaSolicitar && profile) {
+      const aluno = mockAlunos.find(a => a.id === reciboParaSolicitar.alunoId);
+      const turma = mockTurmas.find(t => t.id === reciboParaSolicitar.turmaId);
+      
+      await addSolicitacaoCancelamento({
+        recibo_id: reciboParaSolicitar.id,
+        numero_recibo: reciboParaSolicitar.numero,
+        aluno_nome: reciboParaSolicitar.aluno_nome || aluno?.nome || 'Aluno Desconhecido',
+        aluno_turma: reciboParaSolicitar.aluno_turma || turma?.nome || reciboParaSolicitar.turmaId || '',
+        aluno_turno: reciboParaSolicitar.aluno_turno || reciboParaSolicitar.turno,
+        solicitado_por_id: profile.id,
+        solicitado_por_nome: profile.nome,
+        motivo: motivoSolicitacao.trim()
+      });
+
+      // Recarrega estados
+      setSolicitacoesList([...mockSolicitacoes]);
+      setModalSolicitarOpen(false);
+      setReciboParaSolicitar(null);
+      setMotivoSolicitacao('');
+    }
+  };
+
+  // Handlers para analisar solicitação (admin)
+  const handleAnalisarClick = (sol: SolicitacaoCancelamento) => {
+    setSolicitacaoEmAnalise(sol);
+    setObservacaoAnalise('');
+    setModalAnaliseOpen(true);
+  };
+
+  const confirmarAnalise = async (novoStatus: 'aprovada' | 'recusada') => {
+    if (!solicitacaoEmAnalise || !profile) return;
+
+    const ok = await processarAnaliseSolicitacao(
+      solicitacaoEmAnalise.id,
+      novoStatus,
+      profile.id,
+      profile.nome,
+      observacaoAnalise.trim()
+    );
+
+    if (ok) {
+      setRecibosList([...mockRecibos]);
+      setSolicitacoesList([...mockSolicitacoes]);
+      setModalAnaliseOpen(false);
+      setSolicitacaoEmAnalise(null);
+      setObservacaoAnalise('');
+    }
+  };
+
+  // Mapeamento do Turno de atuação com tratamento seguro
+  const userTurno = profile?.turno || (profile?.perfil === 'manha' ? 'manha' : profile?.perfil === 'tarde' ? 'tarde' : null);
+
+  // Filtragem de Recibos de acordo com regras de turno e permissões
+  const baseRecibos = profile?.perfil === 'admin' || profile?.perfil === 'consulta'
     ? recibosList 
-    : recibosList.filter(r => r.turno.toLowerCase() === profile?.turno);
+    : recibosList.filter(r => {
+        const turnoRec = (r.aluno_turno || r.turno || '').toLowerCase();
+        return turnoRec === userTurno;
+      });
 
   const recibosFiltrados = baseRecibos.filter(r => {
     if (!busca) return true;
@@ -65,6 +178,64 @@ export function ConsultaRecibos() {
         <h1 className="text-2xl font-bold text-slate-800">Consulta de Recibos</h1>
       </div>
 
+      {/* PAINEL ADMIN: Solicitações de Cancelamento Pendentes */}
+      {profile?.perfil === 'admin' && (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-indigo-600" />
+            <h2 className="text-lg font-bold text-slate-800">Solicitações de Cancelamento Pendentes</h2>
+          </div>
+          
+          {solicitacoesList.filter(s => s.status === 'pendente').length === 0 ? (
+            <p className="text-sm text-slate-500 italic">Não há solicitações de cancelamento pendentes no momento.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm whitespace-nowrap border border-slate-100 rounded-lg overflow-hidden">
+                <thead className="bg-slate-50 text-slate-600 font-medium">
+                  <tr>
+                    <th className="px-4 py-3 border-b border-slate-200">Recibo</th>
+                    <th className="px-4 py-3 border-b border-slate-200">Aluno</th>
+                    <th className="px-4 py-3 border-b border-slate-200">Turma/Turno</th>
+                    <th className="px-4 py-3 border-b border-slate-200">Operador Solicitante</th>
+                    <th className="px-4 py-3 border-b border-slate-200">Motivo</th>
+                    <th className="px-4 py-3 border-b border-slate-200">Data Solicitação</th>
+                    <th className="px-4 py-3 border-b border-slate-200 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {solicitacoesList.filter(s => s.status === 'pendente').map(s => (
+                    <tr key={s.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-semibold text-indigo-600">#{s.numero_recibo}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">{s.aluno_nome}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {s.aluno_turma}
+                        <span className="block text-xs text-slate-500 capitalize">{s.aluno_turno}</span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700 font-medium">{s.solicitado_por_nome}</td>
+                      <td className="px-4 py-3 text-slate-600 max-w-xs truncate" title={s.motivo}>
+                        {s.motivo}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {new Date(s.solicitado_em).toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => handleAnalisarClick(s)}
+                          className="px-3.5 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                          Analisar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Caixa de Busca */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
@@ -85,6 +256,7 @@ export function ConsultaRecibos() {
         </div>
       </div>
 
+      {/* Listagem Geral de Recibos */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
@@ -114,17 +286,29 @@ export function ConsultaRecibos() {
                   const matriculaAluno = r.aluno_matricula || aluno?.matricula || '';
                   const turmaNome = r.aluno_turma || turma?.nome || r.turmaId || '';
                   const turnoExibicao = r.aluno_turno || r.turno;
+
+                  // Verifica se este recibo tem uma solicitação pendente
+                  const request = solicitacoesList.find(s => s.recibo_id === r.id && s.status === 'pendente');
+                  const temSolicitacaoPendente = !!request;
                   
                   return (
                     <tr key={r.id} className="hover:bg-slate-50">
                       <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          r.status.toLowerCase() === 'ativo' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                        }`}>
-                          {r.status.toLowerCase() === 'ativo' ? 'Ativo' : 'Cancelado'}
-                        </span>
+                        {temSolicitacaoPendente ? (
+                          <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                            Cancelamento solicitado
+                          </span>
+                        ) : r.status.toLowerCase() === 'ativo' ? (
+                          <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            Ativo
+                          </span>
+                        ) : (
+                          <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                            Cancelado
+                          </span>
+                        )}
                       </td>
-                      <td className="px-6 py-4 font-medium text-slate-800">#{r.numero}</td>
+                      <td className="px-6 py-4 font-semibold text-slate-800">#{r.numero}</td>
                       <td className="px-6 py-4 text-slate-600">{new Date(r.dataHora).toLocaleDateString('pt-BR')}</td>
                       <td className="px-6 py-4 text-slate-800">
                         {nomeAluno}
@@ -137,6 +321,7 @@ export function ConsultaRecibos() {
                       <td className="px-6 py-4 text-right font-medium text-indigo-600">{formatPoints(r.total_pontos)}</td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end space-x-2">
+                          {/* Visualização de Recibo */}
                           <button 
                             onClick={() => navigate(`/recibo/${r.id}`)}
                             className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-1.5 rounded-md cursor-pointer"
@@ -144,14 +329,41 @@ export function ConsultaRecibos() {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          {profile?.perfil === 'admin' && r.status.toLowerCase() === 'ativo' && (
+
+                          {/* Ação para Operador (Manhã ou Tarde): Solicitar cancelamento do turno correspondente */}
+                          {(profile?.perfil === 'manha' || profile?.perfil === 'tarde') && r.status.toLowerCase() === 'ativo' && (
                             <button 
-                              className="text-rose-600 hover:text-rose-900 bg-rose-50 p-1.5 rounded-md cursor-pointer"
-                              title="Cancelar Recibo"
-                              onClick={() => handleCancelarClick(r.id, r.numero)}
+                              className={`p-1.5 rounded-md cursor-pointer transition-colors ${
+                                temSolicitacaoPendente 
+                                  ? 'text-amber-500 bg-amber-50 cursor-not-allowed' 
+                                  : 'text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100'
+                              }`}
+                              title={temSolicitacaoPendente ? "Já existe uma solicitação pendente para este recibo." : "Solicitar cancelamento"}
+                              onClick={() => handleSolicitarClick(r)}
                             >
                               <Ban className="h-4 w-4" />
                             </button>
+                          )}
+
+                          {/* Ação para Admin */}
+                          {profile?.perfil === 'admin' && r.status.toLowerCase() === 'ativo' && (
+                            temSolicitacaoPendente ? (
+                              <button 
+                                className="text-white hover:bg-amber-700 bg-amber-600 p-1.5 rounded-md cursor-pointer"
+                                title="Analisar Solicitação Pendente"
+                                onClick={() => handleAnalisarClick(request)}
+                              >
+                                <AlertCircle className="h-4 w-4 animate-pulse" />
+                              </button>
+                            ) : (
+                              <button 
+                                className="text-rose-600 hover:text-rose-900 bg-rose-50 p-1.5 rounded-md cursor-pointer"
+                                title="Cancelar Recibo Diretamente"
+                                onClick={() => handleCancelarClick(r.id, r.numero)}
+                              >
+                                <Ban className="h-4 w-4" />
+                              </button>
+                            )
                           )}
                         </div>
                       </td>
@@ -164,7 +376,154 @@ export function ConsultaRecibos() {
         </div>
       </div>
 
-      {/* Modal de Auditoria de Cancelamento */}
+      {/* Modal de Alerta de Duplicidade */}
+      {alertaDuplicidade && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+            onClick={() => setAlertaDuplicidade('')}
+          />
+          <div className="relative bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 text-center animate-in zoom-in-95 duration-150">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-amber-100 text-amber-600 mb-4">
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Solicitação já existente</h3>
+            <p className="text-sm text-slate-500 mb-6">
+              {alertaDuplicidade}
+            </p>
+            <button
+              onClick={() => setAlertaDuplicidade('')}
+              className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              Compreendi
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Solicitar Cancelamento (Operadores) */}
+      {modalSolicitarOpen && reciboParaSolicitar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+            onClick={() => setModalSolicitarOpen(false)}
+          />
+          <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col p-6">
+            <div className="mb-4">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-amber-100 text-amber-600 mb-4">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight text-center">Solicitar Cancelamento de Recibo</h3>
+              <p className="text-sm text-slate-500 mt-2 text-center">
+                Preencha o motivo para solicitar o cancelamento do Recibo <strong className="text-slate-800">#{reciboParaSolicitar.numero}</strong>. 
+                Sua solicitação será analisada por um administrador.
+              </p>
+            </div>
+
+            <div className="space-y-4 my-4">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Motivo da Solicitação (Mínimo de 10 caracteres) <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                placeholder="Exemplo: Erro de digitação na quantidade de Amoebas recebidas."
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none transition-all text-sm h-28 resize-none text-slate-800"
+                value={motivoSolicitacao}
+                onChange={(e) => {
+                  setMotivoSolicitacao(e.target.value);
+                  if (e.target.value.trim().length >= 10) setErroSolicitacao('');
+                }}
+              />
+              {erroSolicitacao && (
+                <p className="text-xs font-semibold text-rose-500 flex items-center gap-1 animate-pulse">
+                  <AlertCircle className="h-3.5 w-3.5 inline text-rose-500" /> {erroSolicitacao}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-4">
+              <button
+                onClick={() => setModalSolicitarOpen(false)}
+                className="px-5 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={confirmarSolicitacao}
+                className="px-5 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-md shadow-amber-100 active:scale-95 cursor-pointer"
+              >
+                Enviar Solicitação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Análise de Solicitação de Cancelamento (Admin) */}
+      {modalAnaliseOpen && solicitacaoEmAnalise && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+            onClick={() => setModalAnaliseOpen(false)}
+          />
+          <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col p-6">
+            <div className="mb-4">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 text-indigo-600 mb-4">
+                <Shield className="h-6 w-6" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight text-center">Analisar Solicitação de Cancelamento</h3>
+              <div className="bg-slate-50 p-4 rounded-2xl mx-1.5 my-3 text-xs text-slate-600 space-y-2">
+                <p><strong>Recibo:</strong> #{solicitacaoEmAnalise.numero_recibo}</p>
+                <p><strong>Aluno:</strong> {solicitacaoEmAnalise.aluno_nome} ({solicitacaoEmAnalise.aluno_turma})</p>
+                <p><strong>Solicitado por:</strong> {solicitacaoEmAnalise.solicitado_por_nome}</p>
+                <p><strong>Data da solicitação:</strong> {new Date(solicitacaoEmAnalise.solicitado_em).toLocaleString('pt-BR')}</p>
+                <p className="bg-white p-2 sm:p-3 rounded-lg border border-slate-100 italic break-words">
+                  <strong>Motivo:</strong> "{solicitacaoEmAnalise.motivo}"
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 my-2">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Observação / Justificativa da Análise (Opcional)
+              </label>
+              <textarea
+                placeholder="Insira notas adicionais sobre a homologação aqui..."
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm h-20 resize-none text-slate-800"
+                value={observacaoAnalise}
+                onChange={(e) => setObservacaoAnalise(e.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 mt-4 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setModalAnaliseOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Voltar
+              </button>
+              
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => confirmarAnalise('recusada')}
+                  className="px-4 py-2.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <X className="h-3.5 w-3.5" /> Recusar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmarAnalise('aprovada')}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1 shadow-sm active:scale-95"
+                >
+                  <Check className="h-3.5 w-3.5" /> Aprovar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Auditoria de Cancelamento Direto do Admin */}
       {modalCancelamentoOpen && reciboParaCancelar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 

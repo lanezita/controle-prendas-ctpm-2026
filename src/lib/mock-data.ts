@@ -740,3 +740,170 @@ export function getRankingTurnos() {
     { turno: 'tarde', total_pontos: turnos.tarde }
   ];
 }
+
+export interface SolicitacaoCancelamento {
+  id: string;
+  recibo_id: string;
+  numero_recibo: string;
+  aluno_nome: string;
+  aluno_turma: string;
+  aluno_turno: string;
+  solicitado_por_id: string;
+  solicitado_por_nome: string;
+  solicitado_em: string;
+  motivo: string;
+  status: 'pendente' | 'aprovada' | 'recusada';
+  analisado_por_id?: string;
+  analisado_por_nome?: string;
+  analisado_em?: string;
+  observacao_analise?: string;
+}
+
+const SOLICITACOES_KEY = 'ctpm_solicitacoes_cancelamento_v1';
+
+const getStoredSolicitacoes = (): SolicitacaoCancelamento[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const val = localStorage.getItem(SOLICITACOES_KEY);
+    if (val) return JSON.parse(val);
+  } catch (e) {
+    console.error('Failure reading stored solicitacoes', e);
+  }
+  return [];
+};
+
+export let mockSolicitacoes: SolicitacaoCancelamento[] = getStoredSolicitacoes();
+
+export function saveSolicitacoes(updated: SolicitacaoCancelamento[]) {
+  mockSolicitacoes = updated;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(SOLICITACOES_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failure saving solicitacoes locally', e);
+    }
+  }
+}
+
+export async function addSolicitacaoCancelamento(
+  solicitacao: Omit<SolicitacaoCancelamento, 'id' | 'solicitado_em' | 'status'>
+): Promise<SolicitacaoCancelamento> {
+  const nova: SolicitacaoCancelamento = {
+    ...solicitacao,
+    id: `sol_off_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    solicitado_em: new Date().toISOString(),
+    status: 'pendente'
+  };
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase.from('solicitacoes_cancelamento').insert({
+        recibo_id: solicitacao.recibo_id,
+        numero_recibo: solicitacao.numero_recibo,
+        aluno_nome: solicitacao.aluno_nome,
+        aluno_turma: solicitacao.aluno_turma,
+        aluno_turno: solicitacao.aluno_turno,
+        solicitado_por_id: solicitacao.solicitado_por_id,
+        solicitado_por_nome: solicitacao.solicitado_por_nome,
+        motivo: solicitacao.motivo,
+        status: 'pendente'
+      }).select().single();
+
+      if (!error && data) {
+        nova.id = data.id;
+      } else {
+        console.warn('Falha ao registrar solicitação no Supabase. Gravando localmente.', error);
+      }
+    } catch (e) {
+      console.warn('Erro ao conectar ao Supabase:', e);
+    }
+  }
+
+  const atualizadas = [nova, ...mockSolicitacoes];
+  saveSolicitacoes(atualizadas);
+  return nova;
+}
+
+export async function processarAnaliseSolicitacao(
+  solicitacaoId: string,
+  novoStatus: 'aprovada' | 'recusada',
+  analisadoPorId: string,
+  analisadoPorNome: string,
+  observacaoAnalise?: string
+): Promise<boolean> {
+  const analisadoEm = new Date().toISOString();
+
+  // Procurar no cache
+  const sol = mockSolicitacoes.find(s => s.id === solicitacaoId);
+  if (!sol) {
+    console.error('Solicitação não encontrada');
+    return false;
+  }
+
+  const atualizadas = mockSolicitacoes.map(s => s.id === solicitacaoId ? {
+    ...s,
+    status: novoStatus,
+    analisado_por_id: analisadoPorId,
+    analisado_por_nome: analisadoPorNome,
+    analisado_em: analisadoEm,
+    observacao_analise: observacaoAnalise
+  } : s);
+  saveSolicitacoes(atualizadas);
+
+  // Se aprovado, rodar o fluxo regular de cancelamento de recibos (isso recomputará estatísticas no mesmo instante)
+  if (novoStatus === 'aprovada') {
+    const responsavelCancelamento = `${analisadoPorNome} (Administrador)`;
+    const observacaoTexto = observacaoAnalise ? ` | Obs Analista: ${observacaoAnalise}` : '';
+    const motivoCompleto = `${sol.motivo}${observacaoTexto}`;
+    cancelMockRecibo(sol.recibo_id, responsavelCancelamento, motivoCompleto);
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      const { error } = await supabase.from('solicitacoes_cancelamento').update({
+        status: novoStatus,
+        analisado_por_id: analisadoPorId,
+        analisado_por_nome: analisadoPorNome,
+        analisado_em: analisadoEm,
+        observacao_analise: observacaoAnalise || null
+      }).eq('id', solicitacaoId);
+
+      if (error) {
+        console.error('Erro de update no Supabase:', error);
+      }
+    } catch (e) {
+      console.warn('Erro ao atualizar solicitação no Supabase:', e);
+    }
+  }
+
+  return true;
+}
+
+export async function fetchSolicitacoesCancelamentoFromDB(): Promise<SolicitacaoCancelamento[]> {
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('solicitacoes_cancelamento')
+        .select('*')
+        .order('solicitado_em', { ascending: false });
+
+      if (!error && data) {
+        const dbSolicitacoes = data as SolicitacaoCancelamento[];
+        const dbIds = new Set(dbSolicitacoes.map(s => s.id));
+        const merged = [...dbSolicitacoes];
+
+        mockSolicitacoes.forEach(local => {
+          if (!dbIds.has(local.id) && local.id.startsWith('sol_off_')) {
+            merged.push(local);
+          }
+        });
+
+        saveSolicitacoes(merged);
+        return merged;
+      }
+    } catch (e) {
+      console.warn('Falha na resposta da tabela de solicitações do Supabase:', e);
+    }
+  }
+  return mockSolicitacoes;
+}
