@@ -229,7 +229,27 @@ export function Usuarios() {
       });
 
       if (error) {
-        throw error;
+        let mensagemErro = '';
+        try {
+          const contextRes = (error as any).context;
+          if (contextRes) {
+            if (typeof contextRes.clone === 'function') {
+              const body = await contextRes.clone().json();
+              if (body && body.error) {
+                mensagemErro = body.error;
+              }
+            } else if (typeof contextRes.json === 'function') {
+              const body = await contextRes.json();
+              if (body && body.error) {
+                mensagemErro = body.error;
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Erro ao ler corpo de erro detalhado:', e);
+        }
+
+        throw new Error(mensagemErro || error.message || 'Falha ao processar o convite do usuário.');
       }
 
       if (data && data.error) {

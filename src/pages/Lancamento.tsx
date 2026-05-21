@@ -450,27 +450,27 @@ export function Lancamento() {
             onClick={() => setIsConfirmacaoOpen(false)}
           />
           <div className="relative bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-            <div className="p-8 pb-4 border-b border-slate-100">
-              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Confirmar lançamento</h2>
-              <p className="text-slate-500 font-bold text-xs uppercase tracking-widest mt-1">Confira as informações antes de gerar o recibo.</p>
+            <div className="p-5 md:p-8 pb-4 border-b border-slate-100 shrink-0">
+              <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Confirmar lançamento</h2>
+              <p className="text-slate-500 font-bold text-[10px] md:text-xs uppercase tracking-widest mt-1">Confira as informações antes de gerar o recibo.</p>
             </div>
 
-            <div className="p-8 overflow-y-auto space-y-6">
+            <div className="p-5 md:p-8 overflow-y-auto space-y-6 flex-1 min-w-0">
               {/* Dados do Aluno */}
               <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Aluno</span>
-                  <span className="font-bold text-slate-900 text-sm">{alunoSelecionado.nome_completo}</span>
+                  <span className="font-bold text-slate-900 text-sm break-words whitespace-normal leading-tight">{alunoSelecionado.nome_completo}</span>
                 </div>
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Matrícula</span>
-                  <span className="font-mono text-xs text-slate-700">{alunoSelecionado.matricula}</span>
+                  <span className="font-mono text-xs text-slate-700 break-all">{alunoSelecionado.matricula}</span>
                 </div>
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Turma</span>
-                  <span className="font-bold text-indigo-600 text-xs">{alunoSelecionado.codigo_turma}</span>
+                  <span className="font-bold text-indigo-600 text-xs tracking-tight">{alunoSelecionado.codigo_turma}</span>
                 </div>
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Turno</span>
                   <span className="font-bold text-slate-700 text-xs uppercase tracking-widest">
                     {alunoSelecionado.turno === 'manha' ? 'Manhã' : 'Tarde'}
@@ -481,32 +481,78 @@ export function Lancamento() {
               {/* Itens */}
               <div>
                 <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-3 ml-1">Itens do Recibo</h3>
-                <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                
+                {/* Mobile view - Card stack */}
+                <div className="block md:hidden space-y-3">
+                  {itens.map(item => (
+                    <div key={item.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2 min-w-0 w-full max-w-full">
+                      <div className="flex items-start justify-between gap-3 min-w-0 w-full">
+                        <div className="flex items-start flex-wrap gap-1 leading-normal font-extrabold text-slate-800 break-words whitespace-normal text-xs min-w-0 flex-1 max-w-full">
+                          <span className="break-words max-w-full whitespace-normal leading-tight">{item.prendaNome}</span>
+                          {item.campanhaAplicada && <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0 inline-block align-text-bottom mt-0.5" title="Campanha Ativa" />}
+                        </div>
+                        <span className="shrink-0 text-slate-950 font-black text-right text-xs whitespace-nowrap pt-0.5">
+                          {formatPoints(item.subtotal)} PTS
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-[10px] uppercase font-black tracking-wider text-slate-400">
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-medium lowercase">Qtd</span>
+                          <span className="font-bold text-slate-700">{item.quantidade}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-medium lowercase">Base</span>
+                          <span className="font-mono text-slate-500">{item.pontuacaoBase} pts</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-medium lowercase">Mult</span>
+                          <span className="font-bold text-slate-700">
+                            {item.multiplicadorAplicado > 1 ? `${item.multiplicadorAplicado}x` : '1x'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* total cards for mobile view */}
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex justify-between items-center min-w-0 w-full max-w-full">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] uppercase tracking-widest font-black text-slate-400 leading-none mb-1">Total Geral</span>
+                      <span className="text-xs font-bold text-indigo-700">{itens.length} {itens.length === 1 ? 'item' : 'itens'}</span>
+                    </div>
+                    <span className="text-xl font-black text-indigo-700 tracking-tighter shrink-0 whitespace-nowrap">
+                      {formatPoints(totalGeral)} <span className="text-[10px] font-normal font-sans tracking-normal ml-0.5">PTS</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Desktop view - Traditional table */}
+                <div className="hidden md:block border border-slate-100 rounded-2xl overflow-x-auto min-w-0 max-w-full">
                   <table className="w-full text-xs text-left">
                     <thead className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
                       <tr>
-                        <th className="px-4 py-3">Item</th>
-                        <th className="px-4 py-3 text-center">Qtd</th>
-                        <th className="px-4 py-3 text-right">Pts</th>
-                        <th className="px-4 py-3 text-center">Mult</th>
-                        <th className="px-4 py-3 text-right">Subtotal</th>
+                        <th className="px-4 py-3 min-w-0">Item</th>
+                        <th className="px-4 py-3 text-center w-16">Qtd</th>
+                        <th className="px-4 py-3 text-right w-20">Pts</th>
+                        <th className="px-4 py-3 text-center w-16">Mult</th>
+                        <th className="px-4 py-3 text-right w-28">Subtotal</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {itens.map(item => (
                         <tr key={item.id} className="text-slate-700">
-                          <td className="px-4 py-3 font-bold">
-                            <div className="flex items-center">
-                              {item.prendaNome}
-                              {item.campanhaAplicada && <Zap className="h-3 w-3 text-amber-500 ml-1.5" title="Campanha Ativa" />}
+                          <td className="px-4 py-3 font-bold break-words whitespace-normal min-w-0 max-w-xs md:max-w-md">
+                            <div className="flex items-center flex-wrap gap-1 leading-normal">
+                              <span className="break-words whitespace-normal leading-tight">{item.prendaNome}</span>
+                              {item.campanhaAplicada && <Zap className="h-3 w-3 text-amber-500 shrink-0" title="Campanha Ativa" />}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-center font-bold">{item.quantidade}</td>
-                          <td className="px-4 py-3 text-right text-slate-400 font-mono">{item.pontuacaoBase}</td>
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-4 py-3 text-center font-bold w-16">{item.quantidade}</td>
+                          <td className="px-4 py-3 text-right text-slate-400 font-mono w-20">{item.pontuacaoBase}</td>
+                          <td className="px-4 py-3 text-center w-16">
                             {item.multiplicadorAplicado > 1 ? `${item.multiplicadorAplicado}x` : '-'}
                           </td>
-                          <td className="px-4 py-3 text-right font-black text-indigo-600">
+                          <td className="px-4 py-3 text-right font-black text-indigo-600 w-28">
                             {formatPoints(item.subtotal)}
                           </td>
                         </tr>
@@ -528,38 +574,38 @@ export function Lancamento() {
               {/* Observação */}
               <div>
                 <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-1.5 ml-1">Observação</h3>
-                <div className="bg-white border border-slate-100 p-4 rounded-2xl text-xs font-medium text-slate-500 italic">
+                <div className="bg-white border border-slate-100 p-4 rounded-2xl text-xs font-medium text-slate-500 italic break-words whitespace-normal leading-relaxed w-full max-w-full">
                   {observacao.trim() ? observacao : 'Sem observação'}
                 </div>
               </div>
 
-              <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-start gap-3">
+              <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-start gap-3 w-full max-w-full">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-[11px] font-bold text-amber-800 leading-tight">
+                <p className="text-[11px] font-bold text-amber-800 leading-tight break-words whitespace-normal max-w-full">
                   Após confirmar, o recibo será gerado. Confira se os dados estão corretos.
                 </p>
               </div>
             </div>
 
-            <div className="p-8 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-4">
+            <div className="p-5 md:p-8 border-t border-slate-100 bg-slate-50 shrink-0 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 sm:gap-4">
               <button
                 onClick={() => setIsConfirmacaoOpen(false)}
-                className="px-6 py-3 font-black text-xs text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors"
+                className="px-6 py-3 font-black text-xs text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors w-full sm:w-auto text-center"
               >
                 Voltar e corrigir
               </button>
               <button
                 onClick={handleGerarReciboFinal}
                 disabled={salvando}
-                className="flex items-center gap-2 px-8 py-3 bg-emerald-600 disabled:bg-emerald-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                className="flex items-center justify-center gap-2 px-8 py-3.5 bg-emerald-600 disabled:bg-emerald-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 active:scale-95 cursor-pointer disabled:cursor-not-allowed w-full sm:w-auto"
               >
                 {salvando ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Gerando recibo...
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    <span>Gerando recibo...</span>
                   </>
                 ) : (
-                  'Confirmar e gerar recibo'
+                  <span>Confirmar e gerar recibo</span>
                 )}
               </button>
             </div>
