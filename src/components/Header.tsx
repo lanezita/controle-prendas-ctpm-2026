@@ -11,6 +11,24 @@ interface HeaderProps {
 export function Header({ onMenuToggle }: HeaderProps) {
   const { profile } = useAuth();
 
+  const perfil = profile?.perfil;
+  const nomeReal = profile?.nome?.trim();
+
+  // Determinar o texto de exibição em uma única linha, sem repetição ou badges desnecessários
+  let nomeExibicao = '';
+  if (perfil === 'admin') {
+    const nomeValido = (nomeReal && nomeReal.toLowerCase() !== 'usuário' && nomeReal.toLowerCase() !== 'usuario') ? nomeReal : '';
+    nomeExibicao = nomeValido || 'Administração';
+  } else if (perfil === 'manha') {
+    nomeExibicao = 'Operador Manhã';
+  } else if (perfil === 'tarde') {
+    nomeExibicao = 'Operador Tarde';
+  } else if (perfil === 'consulta') {
+    nomeExibicao = 'Consulta';
+  } else {
+    nomeExibicao = 'Usuário';
+  }
+
   return (
     <header className="print:hidden bg-white border-b border-slate-100 h-16 flex items-center justify-between px-4 md:px-8 shrink-0 relative z-30">
       {/* Mobile Hamburger & Short Title */}
@@ -35,27 +53,16 @@ export function Header({ onMenuToggle }: HeaderProps) {
       {/* Desktop spacer to push profile to the right */}
       <div className="hidden md:block flex-1"></div>
       
-      {/* Profile info - Compact on mobile, detailed on desktop */}
-      <div className="flex items-center space-x-3 md:space-x-6">
+      {/* Profile info - Single-line text & Avatar */}
+      <div className="flex items-center space-x-3 md:space-x-4 animate-fade-in">
         <div className="flex items-center">
           <div className="text-right">
-            <p className="text-xs md:text-sm font-bold text-slate-800 tracking-tight leading-none md:leading-normal">
-              {profile?.nome?.split(' ')[0] /* Carrega o primeiro nome apenas no cabeçalho */}
+            <p className="text-xs md:text-sm font-extrabold text-slate-700 tracking-tight leading-none">
+              {nomeExibicao}
             </p>
-            <div className="flex items-center justify-end gap-1 mt-0.5">
-              <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-wider md:tracking-widest px-1 md:px-1.5 py-0.5 rounded ${
-                profile?.perfil === 'admin' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-slate-50 text-slate-600'
-              }`}>
-                {profile?.perfil === 'admin' ? 'Admin' : 'Usuário'}
-              </span>
-              
-              <span className="hidden sm:inline-block text-[8px] md:text-[10px] font-black uppercase tracking-wider md:tracking-widest bg-blue-50 text-blue-600 px-1 md:px-1.5 py-0.5 rounded border border-blue-100">
-                {profile?.turno === 'manha' ? 'M' : (profile?.turno === 'tarde' ? 'V' : 'Geral')}
-              </span>
-            </div>
           </div>
-          <div className="ml-2.5 md:ml-4 p-0.5 md:p-1 rounded-full bg-slate-50 border border-slate-100 shrink-0">
-            <UserCircle className="h-7 h-7 md:h-8 md:w-8 text-slate-400" />
+          <div className="ml-2.5 md:ml-3 p-0.5 md:p-1 rounded-full bg-slate-50 border border-slate-100 shrink-0">
+            <UserCircle className="h-7 w-7 md:h-8 md:w-8 text-slate-400" />
           </div>
         </div>
       </div>
