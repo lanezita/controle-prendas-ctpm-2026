@@ -5,6 +5,7 @@
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ServiceWorkerUpdateBanner } from './components/ServiceWorkerUpdateBanner';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import { AlertTriangle, Key, ArrowRight, RefreshCw } from 'lucide-react';
 import { Layout } from './components/Layout';
@@ -173,6 +174,7 @@ export default function App() {
       <BrowserRouter>
         <AppRoutes />
       </BrowserRouter>
+      <ServiceWorkerUpdateBanner />
     </AuthProvider>
   );
 }
