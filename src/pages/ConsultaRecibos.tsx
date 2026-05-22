@@ -10,10 +10,11 @@ import {
   mockSolicitacoes, 
   addSolicitacaoCancelamento, 
   processarAnaliseSolicitacao, 
-  fetchSolicitacoesCancelamentoFromDB 
+  fetchSolicitacoesCancelamentoFromDB,
+  fetchRecibosFromDB
 } from '../lib/mock-data';
 import { formatPoints } from '../lib/utils';
-import { Search, Eye, Ban, Filter, AlertCircle, Shield, Check, X } from 'lucide-react';
+import { Search, Eye, Ban, Filter, AlertCircle, Shield, Check, X, Loader2 } from 'lucide-react';
 
 export function ConsultaRecibos() {
   const { profile } = useAuth();
@@ -22,15 +23,26 @@ export function ConsultaRecibos() {
   const [busca, setBusca] = useState('');
   const [recibosList, setRecibosList] = useState(mockRecibos);
   const [solicitacoesList, setSolicitacoesList] = useState<SolicitacaoCancelamento[]>(mockSolicitacoes);
+  const [loading, setLoading] = useState(true);
 
-  // Carrega as solicitações do Supabase se disponível ou lê do cache local
+  // Carrega as solicitações e recibos do Supabase se disponível ou lê do cache local
   useEffect(() => {
-    async function loadSolicitacoes() {
-      const res = await fetchSolicitacoesCancelamentoFromDB();
-      setSolicitacoesList([...res]);
+    async function loadData() {
+      setLoading(true);
+      try {
+        const resRecibos = await fetchRecibosFromDB();
+        setRecibosList([...resRecibos]);
+        
+        const resSols = await fetchSolicitacoesCancelamentoFromDB();
+        setSolicitacoesList([...resSols]);
+      } catch (err) {
+        console.error('Erro ao buscar dados do Supabase:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-    loadSolicitacoes();
-  }, [recibosList]);
+    loadData();
+  }, []);
 
   // Estados para Auditoria de Cancelamento Direto do Admin
   const [modalCancelamentoOpen, setModalCancelamentoOpen] = useState(false);
@@ -280,7 +292,16 @@ export function ConsultaRecibos() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {recibosFiltrados.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+                      <span>Carregando recibos...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : recibosFiltrados.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
                     Nenhum recibo encontrado.

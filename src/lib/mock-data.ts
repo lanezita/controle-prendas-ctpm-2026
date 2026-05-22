@@ -212,68 +212,14 @@ const mockCampanhasDefault: CampanhaRelampago[] = [
 
 const STORAGE_KEY = 'ctpm_mock_recibos_v1';
 
-const defaultRecibos: Recibo[] = [
-  {
-    id: 'r3',
-    numero: '2026-0003',
-    dataHora: new Date().toISOString(),
-    alunoId: 'a3', // Eduarda Lima
-    turmaId: 't10', // 12304
-    turno: 'tarde',
-    total_pontos: 200, 
-    usuarioId: '1',
-    status: 'ativo',
-    itens: [
-      { id: 'ri3', reciboId: 'r3', prendaId: 'p1', quantidade: 1, pontuacaoBase: 200, multiplicadorAplicado: 1, subtotal: 200, campanhaAplicada: false, nome_prenda: 'Amoeba', variacao: 'Diversas' }
-    ],
-    aluno_nome: 'Eduarda Lima',
-    aluno_matricula: '20261230401',
-    aluno_turma: '12304',
-    aluno_turno: 'tarde',
-    usuario_responsavel_nome: 'Administrador',
-    usuario_responsavel_perfil: 'admin'
-  },
-  {
-    id: 'r2',
-    numero: '2026-0002',
-    dataHora: new Date().toISOString(),
-    alunoId: 'a2', // Felipe Martins
-    turmaId: 't7', // 12103
-    turno: 'tarde',
-    total_pontos: 120, 
-    usuarioId: '1',
-    status: 'ativo',
-    itens: [
-      { id: 'ri2', reciboId: 'r2', prendaId: 'p8', quantidade: 2, pontuacaoBase: 50, multiplicadorAplicado: 1, subtotal: 100, campanhaAplicada: false, nome_prenda: 'Carrinhos e bonecos pequenos', variacao: 'Pequenos' }
-    ],
-    aluno_nome: 'Felipe Martins',
-    aluno_matricula: '20261210301',
-    aluno_turma: '12103',
-    aluno_turno: 'tarde',
-    usuario_responsavel_nome: 'Administrador',
-    usuario_responsavel_perfil: 'admin'
-  },
-  {
-    id: 'r1',
-    numero: '2026-0001',
-    dataHora: new Date().toISOString(),
-    alunoId: 'a1', // Ana Carolina Silva
-    turmaId: 't1', // 11301
-    turno: 'manha',
-    total_pontos: 50, 
-    usuarioId: '1',
-    status: 'ativo',
-    itens: [
-      { id: 'ri1', reciboId: 'r1', prendaId: 'p8', quantidade: 1, pontuacaoBase: 50, multiplicadorAplicado: 1, subtotal: 50, campanhaAplicada: false, nome_prenda: 'Carrinhos e bonecos pequenos', variacao: 'Pequenos' } 
-    ],
-    aluno_nome: 'Ana Carolina Silva',
-    aluno_matricula: '20261130101',
-    aluno_turma: '11301',
-    aluno_turno: 'manha',
-    usuario_responsavel_nome: 'Administrador',
-    usuario_responsavel_perfil: 'admin'
-  }
-];
+const defaultRecibos: Recibo[] = [];
+
+const isMockReceipt = (r: Recibo): boolean => {
+  const isIdMock = ['r1', 'r2', 'r3'].includes(r.id);
+  const isNumMock = ['2026-0001', '2026-0002', '2026-0003'].includes(r.numero);
+  const isNameMock = ['Ana Carolina Silva', 'Felipe Martins', 'Eduarda Lima'].includes(r.aluno_nome || '');
+  return isIdMock || isNumMock || isNameMock;
+};
 
 const getStoredAlunos = (): Aluno[] => {
   if (typeof window === 'undefined') return mockAlunosDefault;
@@ -312,17 +258,22 @@ const getStoredCampanhas = (): CampanhaRelampago[] => {
 };
 
 const getStoredRecibos = (): Recibo[] => {
-  if (typeof window === 'undefined') return defaultRecibos;
+  if (typeof window === 'undefined') return [];
   try {
     const val = localStorage.getItem(STORAGE_KEY);
     if (val) {
-      return JSON.parse(val);
+      const parsed = JSON.parse(val) as Recibo[];
+      const filtered = parsed.filter(r => !isMockReceipt(r));
+      if (filtered.length !== parsed.length) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+      }
+      return filtered;
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultRecibos));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
   } catch (e) {
     console.error('Failure reading stored recibos', e);
   }
-  return defaultRecibos;
+  return [];
 };
 
 export let mockAlunos: Aluno[] = getStoredAlunos();
@@ -922,4 +873,111 @@ export async function fetchSolicitacoesCancelamentoFromDB(): Promise<Solicitacao
     }
   }
   return mockSolicitacoes;
+}
+
+export function getStoredRecibosOfflineOnly(): Recibo[] {
+  const all = getStoredRecibos();
+  return all.filter(r => !r.sincronizado || r.id.startsWith('r_off_'));
+}
+
+export async function fetchRecibosFromDB(): Promise<Recibo[]> {
+  if (isSupabaseConfigured) {
+    try {
+      // Fetch both receipts and launches (items)
+      const { data: dbRecibos, error: recError } = await supabase
+        .from('recibos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (recError) {
+        console.error('Error fetching receipts from Supabase:', recError);
+        return mockRecibos;
+      }
+
+      const { data: dbLancamentos, error: lancError } = await supabase
+        .from('lancamentos')
+        .select('*');
+
+      if (lancError) {
+        console.error('Error fetching lancamentos from Supabase:', lancError);
+      }
+
+      // Group lancamentos by numero_recibo
+      const lancamentosMap: Record<string, any[]> = {};
+      if (dbLancamentos) {
+        dbLancamentos.forEach(l => {
+          if (!lancamentosMap[l.numero_recibo]) {
+            lancamentosMap[l.numero_recibo] = [];
+          }
+          lancamentosMap[l.numero_recibo].push(l);
+        });
+      }
+
+      if (dbRecibos) {
+        // Map table rows to Recibo interface
+        const mappedRecibos: Recibo[] = dbRecibos.map((row: any) => {
+          const itemsFromLancamentos = lancamentosMap[row.numero_recibo] || [];
+          const mappedItems: ReciboItem[] = itemsFromLancamentos.map((l: any) => ({
+            id: l.id,
+            reciboId: row.id,
+            prendaId: l.prenda_id || 'avulsa',
+            quantidade: l.quantidade,
+            pontuacaoBase: l.pontos_base,
+            multiplicadorAplicado: l.multiplicador || 1,
+            subtotal: l.total_pontos,
+            campanhaAplicada: l.prenda_relampago === 'sim' || (l.multiplicador || 1) > 1,
+            campanhaRelampagoId: l.campanha_relampago_id,
+            nome_prenda: l.nome_prenda,
+            variacao: l.tipo_prenda === 'avulsa' ? 'Avulsa' : 'Regular'
+          }));
+
+          return {
+            id: row.id,
+            numero: row.numero_recibo,
+            dataHora: row.created_at || row.data_geracao || new Date().toISOString(),
+            alunoId: row.aluno_id || '',
+            turmaId: row.aluno_turma || '',
+            turno: row.aluno_turno as 'manha' | 'tarde',
+            total_pontos: row.total_pontos || 0,
+            usuarioId: row.usuario_id || '',
+            status: row.status as 'ativo' | 'cancelado',
+            itens: mappedItems,
+            observacao: row.observacao,
+            aluno_nome: row.aluno_nome,
+            aluno_matricula: row.aluno_matricula,
+            aluno_turma: row.aluno_turma,
+            aluno_turno: row.aluno_turno,
+            usuario_responsavel_nome: row.usuario_responsavel_nome,
+            usuario_responsavel_perfil: row.usuario_responsavel_perfil,
+            cancelado_por: row.cancelado_por,
+            cancelado_em: row.cancelado_em,
+            motivo_cancelamento: row.motivo_cancelamento,
+            sincronizado: true
+          };
+        });
+
+        // Filter and keep only real offline receipts from local cache (Rule 7 & 8)
+        const localOfflineOnly = getStoredRecibosOfflineOnly();
+
+        const merged = [...mappedRecibos, ...localOfflineOnly];
+        
+        // Let's sort to keep consistent sequence (by parsed number or date desc)
+        merged.sort((a, b) => b.numero.localeCompare(a.numero));
+
+        // Reassign the export variable so that other pages (like Ranking) can read it reactively
+        mockRecibos = merged;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        } catch (e) {
+          console.error(e);
+        }
+        
+        return merged;
+      }
+    } catch (e) {
+      console.warn('Erro fetchRecibosFromDB:', e);
+    }
+  }
+
+  return mockRecibos;
 }

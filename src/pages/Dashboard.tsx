@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { mockPrendas, isCampanhaVigente, getLocalDataFmt, getDashboardStats } from '../lib/mock-data'; // Usando apenas para nomes de prendas enquanto os ativos não são carregados na dashboard
+import { mockPrendas, isCampanhaVigente, getLocalDataFmt, getDashboardStats, fetchRecibosFromDB } from '../lib/mock-data'; // Usando apenas para nomes de prendas enquanto os ativos não são carregados na dashboard
 import { formatPoints, cn } from '../lib/utils';
 import { Trophy, FileText, Zap, TrendingUp, Clock, Loader2, AlertCircle, Printer, Eye } from 'lucide-react';
 import { PrintSelectionModal } from '../components/PrintSelectionModal';
@@ -56,6 +56,9 @@ export function Dashboard() {
   const fetchDashboardStats = async () => {
     try {
       if (!profile) return;
+      // Fetch latest receipts from DB
+      await fetchRecibosFromDB();
+
       const localStats = getDashboardStats(profile.perfil, profile.turnoVinculado);
       setStats({
         total_pontos: localStats.total_pontos,

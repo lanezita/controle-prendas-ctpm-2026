@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPoints, cn } from '../lib/utils';
-import { getRankingAlunos, getRankingTurmas, getRankingTurnos } from '../lib/mock-data';
+import { getRankingAlunos, getRankingTurmas, getRankingTurnos, fetchRecibosFromDB } from '../lib/mock-data';
 import { Trophy, Medal, Award, Users, Sun, Moon, Globe, Loader2, Printer, Eye } from 'lucide-react';
 import { PrintSelectionModal } from '../components/PrintSelectionModal';
 import { Logo } from '../components/Logo';
@@ -76,6 +76,9 @@ export function Ranking() {
     setLoading(true);
 
     try {
+      // Fetch latest receipts from DB
+      await fetchRecibosFromDB();
+
       const isFreeQuery = profile.perfil === 'admin' || (profile.perfil === 'consulta' && profile.turno === 'ambos');
       const queryTurno = isFreeQuery ? turnoVisivel : profile.turno;
 
