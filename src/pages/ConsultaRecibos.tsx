@@ -147,14 +147,22 @@ export function ConsultaRecibos() {
     }
   };
 
+  const getTurnoNormalizado = (t: string | undefined | null): string => {
+    if (!t) return '';
+    const lower = t.toLowerCase().trim();
+    if (lower === 'manhã' || lower === 'manha' || lower === 'matutino') return 'manha';
+    if (lower === 'tarde' || lower === 'vespertino') return 'tarde';
+    return lower;
+  };
+
   // Mapeamento do Turno de atuação com tratamento seguro
-  const userTurno = profile?.turno || (profile?.perfil === 'manha' ? 'manha' : profile?.perfil === 'tarde' ? 'tarde' : null);
+  const userTurno = getTurnoNormalizado(profile?.turno || (profile?.perfil === 'manha' ? 'manha' : profile?.perfil === 'tarde' ? 'tarde' : null));
 
   // Filtragem de Recibos de acordo com regras de turno e permissões
   const baseRecibos = profile?.perfil === 'admin' || profile?.perfil === 'consulta'
     ? recibosList 
     : recibosList.filter(r => {
-        const turnoRec = (r.aluno_turno || r.turno || '').toLowerCase();
+        const turnoRec = getTurnoNormalizado(r.aluno_turno || r.turno);
         return turnoRec === userTurno;
       });
 
@@ -331,14 +339,13 @@ export function ConsultaRecibos() {
                           </button>
 
                           {/* Ação para Operador (Manhã ou Tarde): Solicitar cancelamento do turno correspondente */}
-                          {(profile?.perfil === 'manha' || profile?.perfil === 'tarde') && r.status.toLowerCase() === 'ativo' && (
+                          {(profile?.perfil === 'manha' || profile?.perfil === 'tarde') && 
+                           r.status.toLowerCase() === 'ativo' && 
+                           !temSolicitacaoPendente && 
+                           (getTurnoNormalizado(r.aluno_turno || r.turno) === profile?.perfil) && (
                             <button 
-                              className={`p-1.5 rounded-md cursor-pointer transition-colors ${
-                                temSolicitacaoPendente 
-                                  ? 'text-amber-500 bg-amber-50 cursor-not-allowed' 
-                                  : 'text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100'
-                              }`}
-                              title={temSolicitacaoPendente ? "Já existe uma solicitação pendente para este recibo." : "Solicitar cancelamento"}
+                              className="text-rose-600 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 p-1.5 rounded-md cursor-pointer inline-flex items-center"
+                              title="Solicitar cancelamento"
                               onClick={() => handleSolicitarClick(r)}
                             >
                               <Ban className="h-4 w-4" />
@@ -346,24 +353,14 @@ export function ConsultaRecibos() {
                           )}
 
                           {/* Ação para Admin */}
-                          {profile?.perfil === 'admin' && r.status.toLowerCase() === 'ativo' && (
-                            temSolicitacaoPendente ? (
-                              <button 
-                                className="text-white hover:bg-amber-700 bg-amber-600 p-1.5 rounded-md cursor-pointer"
-                                title="Analisar Solicitação Pendente"
-                                onClick={() => handleAnalisarClick(request)}
-                              >
-                                <AlertCircle className="h-4 w-4 animate-pulse" />
-                              </button>
-                            ) : (
-                              <button 
-                                className="text-rose-600 hover:text-rose-900 bg-rose-50 p-1.5 rounded-md cursor-pointer"
-                                title="Cancelar Recibo Diretamente"
-                                onClick={() => handleCancelarClick(r.id, r.numero)}
-                              >
-                                <Ban className="h-4 w-4" />
-                              </button>
-                            )
+                          {profile?.perfil === 'admin' && r.status.toLowerCase() === 'ativo' && temSolicitacaoPendente && (
+                            <button 
+                              className="text-white hover:bg-amber-700 bg-amber-600 p-1.5 rounded-md cursor-pointer inline-flex items-center"
+                              title="Analisar Solicitação Pendente"
+                              onClick={() => handleAnalisarClick(request)}
+                            >
+                              <AlertCircle className="h-4 w-4 animate-pulse" />
+                            </button>
                           )}
                         </div>
                       </td>

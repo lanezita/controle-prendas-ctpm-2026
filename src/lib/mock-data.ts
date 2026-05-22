@@ -797,13 +797,13 @@ export async function addSolicitacaoCancelamento(
 
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase.from('solicitacoes_cancelamento').insert({
+      const { data, error } = await supabase.from('solicitacoes_cancelamento_recibos').insert({
         recibo_id: solicitacao.recibo_id,
         numero_recibo: solicitacao.numero_recibo,
         aluno_nome: solicitacao.aluno_nome,
         aluno_turma: solicitacao.aluno_turma,
         aluno_turno: solicitacao.aluno_turno,
-        solicitado_por_id: solicitacao.solicitado_por_id,
+        solicitado_por: solicitacao.solicitado_por_id,
         solicitado_por_nome: solicitacao.solicitado_por_nome,
         motivo: solicitacao.motivo,
         status: 'pendente'
@@ -852,7 +852,7 @@ export async function processarAnaliseSolicitacao(
 
   // Se aprovado, rodar o fluxo regular de cancelamento de recibos (isso recomputará estatísticas no mesmo instante)
   if (novoStatus === 'aprovada') {
-    const responsavelCancelamento = `${analisadoPorNome} (Administrador)`;
+    const responsavelCancelamento = analisadoPorId; // O UUID do admin
     const observacaoTexto = observacaoAnalise ? ` | Obs Analista: ${observacaoAnalise}` : '';
     const motivoCompleto = `${sol.motivo}${observacaoTexto}`;
     cancelMockRecibo(sol.recibo_id, responsavelCancelamento, motivoCompleto);
@@ -860,12 +860,12 @@ export async function processarAnaliseSolicitacao(
 
   if (isSupabaseConfigured) {
     try {
-      const { error } = await supabase.from('solicitacoes_cancelamento').update({
+      const { error } = await supabase.from('solicitacoes_cancelamento_recibos').update({
         status: novoStatus,
-        analisado_por_id: analisadoPorId,
+        analisado_por: analisadoPorId,
         analisado_por_nome: analisadoPorNome,
         analisado_em: analisadoEm,
-        observacao_analise: observacaoAnalise || null
+        observacao_admin: observacaoAnalise || null
       }).eq('id', solicitacaoId);
 
       if (error) {
@@ -883,12 +883,28 @@ export async function fetchSolicitacoesCancelamentoFromDB(): Promise<Solicitacao
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
-        .from('solicitacoes_cancelamento')
+        .from('solicitacoes_cancelamento_recibos')
         .select('*')
         .order('solicitado_em', { ascending: false });
 
       if (!error && data) {
-        const dbSolicitacoes = data as SolicitacaoCancelamento[];
+        const dbSolicitacoes: SolicitacaoCancelamento[] = (data as any[]).map(row => ({
+          id: row.id,
+          recibo_id: row.recibo_id,
+          numero_recibo: row.numero_recibo,
+          aluno_nome: row.aluno_nome || '',
+          aluno_turma: row.aluno_turma || '',
+          aluno_turno: row.aluno_turno || '',
+          solicitado_por_id: row.solicitado_por || '',
+          solicitado_por_nome: row.solicitado_por_nome || '',
+          solicitado_em: row.solicitado_em || '',
+          motivo: row.motivo || '',
+          status: row.status as 'pendente' | 'aprovada' | 'recusada',
+          analisado_por_id: row.analisado_por || undefined,
+          analisado_por_nome: row.analisado_por_nome || undefined,
+          analisado_em: row.analisado_em || undefined,
+          observacao_analise: row.observacao_admin || undefined
+        }));
         const dbIds = new Set(dbSolicitacoes.map(s => s.id));
         const merged = [...dbSolicitacoes];
 
