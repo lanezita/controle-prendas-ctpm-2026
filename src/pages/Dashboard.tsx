@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { mockPrendas, isCampanhaVigente, getLocalDataFmt, getDashboardStats, fetchRecibosFromDB } from '../lib/mock-data'; // Usando apenas para nomes de prendas enquanto os ativos não são carregados na dashboard
+import { mockPrendas, isCampanhaVigente, getLocalDataFmt, fetchRecibosFromDB } from '../lib/mock-data'; // Usando apenas para nomes de prendas enquanto os ativos não são carregados na dashboard
 import { formatPoints, cn } from '../lib/utils';
 import { Trophy, FileText, Zap, TrendingUp, Clock, Loader2, AlertCircle, Printer, Eye } from 'lucide-react';
 import { PrintSelectionModal } from '../components/PrintSelectionModal';
@@ -26,11 +26,96 @@ export function Dashboard() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedPrintItems, setSelectedPrintItems] = useState<string[]>([]);
-  const [stats, setStats] = useState({
-    total_pontos: 0,
-    total_recibos: 0,
-    turmaDestaque: { nome: '', turno: '' }
-  });
+  
+  // Real database connection state
+  const [recibosList, setRecibosList] = useState<any[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [filtroTurno, setFiltroTurno] = useState<string>('todos');
+
+  // Normalization helper
+  const getTurnoNormalizadoLocal = (t: string | undefined | null): string => {
+    if (!t) return '';
+    const lower = t.toLowerCase().trim();
+    if (lower === 'manhã' || lower === 'manha' || lower === 'matutino') return 'manha';
+    if (lower === 'tarde' || lower === 'vespertino') return 'tarde';
+    return lower;
+  };
+
+  // Configure initialized shift filter securely based on profile/turno
+  useEffect(() => {
+    if (profile) {
+      if (profile.perfil === 'admin') {
+        setFiltroTurno('todos');
+      } else if (profile.perfil === 'consulta') {
+        if (profile.turno === 'ambos' || !profile.turno) {
+          setFiltroTurno('todos');
+        } else {
+          setFiltroTurno(profile.turno);
+        }
+      } else if (profile.perfil === 'manha') {
+        setFiltroTurno('manha');
+      } else if (profile.perfil === 'tarde') {
+        setFiltroTurno('tarde');
+      } else {
+        const norm = getTurnoNormalizadoLocal(profile.turno || profile.perfil);
+        setFiltroTurno(norm === 'tarde' ? 'tarde' : 'manha');
+      }
+    }
+  }, [profile]);
+
+  // Compute all indicators reactively
+  const stats = useMemo(() => {
+    const baseRecibos = recibosList.filter(r => {
+      if (filtroTurno === 'todos') return true;
+      const tNorm = getTurnoNormalizadoLocal(r.aluno_turno || r.turno);
+      return tNorm === filtroTurno;
+    });
+
+    // Rule 2: Pontos totais: sum(total_pontos) somente de recibos com status = 'ativo'
+    const total_pontos = baseRecibos
+      .filter(r => r.status === 'ativo')
+      .reduce((acc, r) => acc + (Number(r.total_pontos) || 0), 0);
+
+    // Rule 3: Recibos emitidos: count(*) somente de recibos com status = 'ativo'
+    const total_recibos = baseRecibos.filter(r => r.status === 'ativo').length;
+
+    // Rule 7: Líder do turno: agrupar por codigo_turma (aluno_turma)
+    const classPoints: Record<string, { pontos: number; turno: string }> = {};
+    baseRecibos
+      .filter(r => r.status === 'ativo')
+      .forEach(r => {
+        const classCode = r.aluno_turma || r.turmaId;
+        if (classCode) {
+          const tNorm = getTurnoNormalizadoLocal(r.aluno_turno || r.turno);
+          if (!classPoints[classCode]) {
+            classPoints[classCode] = { pontos: 0, turno: tNorm };
+          }
+          classPoints[classCode].pontos += (Number(r.total_pontos) || 0);
+        }
+      });
+
+    const highlights = Object.entries(classPoints).map(([codigo, val]) => ({
+      codigo,
+      pontos: val.pontos,
+      turno: val.turno
+    }));
+
+    highlights.sort((a, b) => b.pontos - a.pontos);
+    const topClass = highlights[0];
+    const turmaDestaque = topClass
+      ? { nome: topClass.codigo, turno: topClass.turno }
+      : { nome: '', turno: '' };
+
+    // Rule 6: Atividade recente (ativos e cancelados, mas respeitando o shift filter)
+    const atividadeRecente = baseRecibos.slice(0, 10);
+
+    return {
+      total_pontos,
+      total_recibos,
+      turmaDestaque,
+      atividadeRecente
+    };
+  }, [recibosList, filtroTurno]);
 
   const handlePrintAction = (items: string[], action: 'VIEW' | 'PRINT') => {
     setSelectedPrintItems(items);
@@ -54,19 +139,16 @@ export function Dashboard() {
   }, [profile]);
 
   const fetchDashboardStats = async () => {
+    setLoading(true);
+    setErrorMsg(null);
     try {
       if (!profile) return;
       // Fetch latest receipts from DB
-      await fetchRecibosFromDB();
-
-      const localStats = getDashboardStats(profile.perfil, profile.turnoVinculado);
-      setStats({
-        total_pontos: localStats.total_pontos,
-        total_recibos: localStats.total_recibos,
-        turmaDestaque: localStats.turmaDestaque
-      });
-    } catch (err) {
-      console.error('Erro ao carregar stats:', err);
+      const dbRecibos = await fetchRecibosFromDB();
+      setRecibosList(dbRecibos || []);
+    } catch (err: any) {
+      console.error('Erro ao carregar stats do Supabase:', err);
+      setErrorMsg('Ocorreu uma falha ao obter os dados atualizados do Supabase. Exibindo informações em cache local.');
     } finally {
       setLoading(false);
     }
@@ -339,15 +421,43 @@ export function Dashboard() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Painel Inicial</h1>
             <p className="text-slate-500 text-xs md:text-sm">Controle de arrecadação de prendas &mdash; Estilo CTPM.</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+            {errorMsg && (
+              <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-800 font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg shrink-0">
+                ⚠️ Erro de Rede
+              </span>
+            )}
+            
+            {/* Shift selector for administrators or all-shift consult profiles */}
+            {(profile?.perfil === 'admin' || (profile?.perfil === 'consulta' && (profile?.turno === 'ambos' || !profile?.turno))) ? (
+              <div className="flex items-center gap-2">
+                <label htmlFor="dashboard-select-turno" className="text-[10px] font-black uppercase text-slate-400 tracking-widest whitespace-nowrap">Turno:</label>
+                <select
+                  id="dashboard-select-turno"
+                  value={filtroTurno}
+                  onChange={(e) => setFiltroTurno(e.target.value)}
+                  className="px-3.5 py-2 bg-white border border-slate-200 hover:border-slate-350 text-slate-800 rounded-xl font-black text-xs uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-xs cursor-pointer"
+                >
+                  <option value="todos">Geral (Ambos)</option>
+                  <option value="manha">Manhã</option>
+                  <option value="tarde">Tarde</option>
+                </select>
+              </div>
+            ) : (
+              // Badge displaying restricted shift
+              <span className="inline-flex items-center px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-slate-50 border border-slate-150 text-slate-600">
+                Turno: {filtroTurno === 'manha' ? 'Matutino' : 'Vespertino'}
+              </span>
+            )}
+
             <button
               onClick={() => setIsPrintModalOpen(true)}
-              className="w-full sm:w-auto flex items-center justify-center px-4 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-900 transition-all shadow-xl shadow-indigo-100 active:scale-95 cursor-pointer"
+              className="flex items-center justify-center px-4 py-3 bg-indigo-600 hover:bg-slate-950 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-indigo-100 active:scale-95 cursor-pointer w-full sm:w-auto"
             >
               <Printer className="w-4 h-4 mr-2" />
               Imprimir relatório do dia
             </button>
-            {loading && <Loader2 className="w-5 h-5 animate-spin text-indigo-600 shrink-0" />}
+            {loading && <Loader2 className="w-5 h-5 animate-spin text-indigo-600 shrink-0 mx-auto sm:mx-0" />}
           </div>
         </div>
 
@@ -369,7 +479,6 @@ export function Dashboard() {
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recibos Emitidos</p>
             <h3 className="text-3xl font-black text-slate-900 tracking-tight">{stats.total_recibos}</h3>
-            <span className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter absolute bottom-1 right-2 opacity-40">Ainda não integrado</span>
           </div>
         </div>
 
@@ -436,23 +545,58 @@ export function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden text-slate-900">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden text-slate-900 flex flex-col justify-between">
           <div className="p-5 border-b border-slate-50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-indigo-500" />
               <h2 className="font-bold text-slate-800 text-xs uppercase tracking-widest">Atividade Recente</h2>
             </div>
-            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-rose-50 rounded border border-rose-100">
-               <AlertCircle className="w-3 h-3 text-rose-500" />
-               <span className="text-[8px] font-black text-rose-600 uppercase">Pendente</span>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 rounded border border-emerald-100 shrink-0">
+               <span className="relative flex h-1.5 w-1.5">
+                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-600"></span>
+               </span>
+               <span className="text-[8px] font-black text-emerald-700 uppercase tracking-wider">Tempo Real</span>
             </div>
           </div>
-          <div className="p-0 min-h-[150px] flex flex-col justify-center">
-             <div className="p-10 text-center">
+          <div className="p-0 min-h-[150px] flex flex-col justify-start">
+            {stats.atividadeRecente.length === 0 ? (
+              <div className="p-10 text-center flex-1 flex items-center justify-center">
                 <p className="text-slate-400 font-medium italic text-sm font-sans">
-                  Os lançamentos de hoje aparecerão aqui assim que a gravação real for ativada no sistema.
+                  Nenhum recibo emitido no turno selecionado.
                 </p>
               </div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {stats.atividadeRecente.map((rec) => (
+                  <li key={rec.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center text-xs md:text-sm">
+                    <div className="min-w-0 flex-1 pr-2">
+                      <div className="flex items-center flex-wrap gap-2">
+                        <span className={cn("font-bold text-slate-800 uppercase truncate max-w-[200px]", rec.status === 'cancelado' && "line-through text-slate-400")}>
+                          {rec.aluno_nome || `Matrícula: ${rec.aluno_matricula || '---'}`}
+                        </span>
+                        {rec.status === 'cancelado' && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-rose-100 text-rose-800 shrink-0">
+                            Cancelado
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5 uppercase font-bold tracking-widest opacity-80 truncate">
+                        Classe: {rec.aluno_turma || rec.turmaId || 'S/T'} • Turno: {getTurnoNormalizadoLocal(rec.aluno_turno || rec.turno) === 'manha' ? 'Matutino' : 'Vespertino'} • Recibo: {rec.numero}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={cn("font-black text-indigo-700 text-sm", rec.status === 'cancelado' && "line-through text-rose-400/70")}>
+                        {formatPoints(rec.total_pontos)} pts
+                      </span>
+                      <p className="text-[9px] text-slate-400 font-semibold mt-0.5 leading-none">
+                        {new Date(rec.dataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </div>
