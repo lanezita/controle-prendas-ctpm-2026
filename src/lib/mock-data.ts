@@ -448,24 +448,43 @@ export function cancelMockRecibo(reciboId: string, canceladoPor: string, motivo:
 }
 
 export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Promise<Recibo> {
-    let onlineSuccess = false;
-    let newRecibo: Recibo | null = null;
-    const isOnline = isSupabaseConfigured;
+    const isOnline = isSupabaseConfigured && typeof navigator !== 'undefined' && navigator.onLine;
 
     if (isOnline) {
+      // 1. Verificar se há sessão ativa do Supabase
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error("Sessão expirada ou inválida no Supabase. Por favor, faça login novamente.");
+      }
+
+      // Validar se IDs são UUIDs válidos para evitar quebras de cast no banco
+      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      
+      if (!isUUID(recibo.alunoId)) {
+        throw new Error('O aluno selecionado é um registro local temporário e não possui um ID válido no Supabase. Busque um aluno online cadastrado para lançar o recibo.');
+      }
+      if (!isUUID(recibo.usuarioId)) {
+        throw new Error('Seu usuário atual não possui um identificador (UUID) de operador válido.');
+      }
+
       try {
         const itensEnvio = (recibo.itens || []).map(item => {
           const isRelampago = item.campanhaAplicada || item.multiplicadorAplicado > 1;
+          
+          // Sanitização para garantir UUIDs válidos nas relações
+          const validPrendaId = isUUID(item.prendaId) ? item.prendaId : null;
+          const validCampanhaId = item.campanhaRelampagoId && isUUID(item.campanhaRelampagoId) ? item.campanhaRelampagoId : null;
+
           return {
-            prenda_id: item.prendaId === 'avulsa' ? null : item.prendaId,
+            prenda_id: validPrendaId,
             nome_prenda: item.nome_prenda || 'Prenda Avulsa',
-            tipo_prenda: item.prendaId === 'avulsa' ? 'avulsa' : 'regular',
+            tipo_prenda: item.prendaId === 'avulsa' || !validPrendaId ? 'avulsa' : 'regular',
             quantidade: item.quantidade,
             pontos_base: item.pontuacaoBase,
             prenda_relampago: isRelampago ? 'sim' : 'não',
             multiplicador: item.multiplicadorAplicado,
             total_pontos: item.subtotal,
-            campanha_relampago_id: item.campanhaRelampagoId || null
+            campanha_relampago_id: validCampanhaId
           };
         });
 
@@ -485,85 +504,98 @@ export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Prom
         });
 
         if (error) {
-          console.error('Supabase transactional write failed, falling back to local storage:', error);
-        } else if (data && data.numero_recibo) {
+          console.error('Supabase transactional write failed completely:', error);
+          throw new Error(error.message || JSON.stringify(error));
+        }
+
+        if (data && data.numero_recibo) {
           const nextNum = data.numero_recibo;
           const officialId = data.id || `r_${Date.now()}`;
           
-          newRecibo = {
+          const newRecibo: Recibo = {
             ...recibo,
             id: officialId,
             numero: nextNum,
             sincronizado: true
           };
-          onlineSuccess = true;
-        }
-      } catch (e) {
-        console.warn('Network or database exception in addMockRecibo transaction:', e);
-      }
-    }
 
-    if (!onlineSuccess || !newRecibo) {
+          // Salva no mockRecibos local array
+          mockRecibos = [newRecibo, ...mockRecibos.filter(r => r.id !== officialId)];
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(mockRecibos));
+            } catch (e) {
+              console.error('Failure writing stored recibos', e);
+            }
+          }
+
+          // Trigger a query refresh immediately so stats are based on the latest DB records
+          await fetchRecibosFromDB();
+          return newRecibo;
+        } else {
+          throw new Error("O banco de dados não retornou as informações de criação do recibo.");
+        }
+      } catch (e: any) {
+        console.error('Erro detalhado no Supabase:', e);
+        throw new Error(e.message || "Não foi possível salvar o recibo no banco de dados. Verifique a conexão e tente novamente.");
+      }
+    } else {
+      // Offline mode sequence
       const tempSeq = generateNextReceiptNumber();
-      newRecibo = {
+      const newRecibo: Recibo = {
         ...recibo,
         id: `r_off_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         numero: tempSeq,
         sincronizado: false,
         offline_id: `rec_off_${Date.now()}`
       };
-    }
 
-    // Salva no mockRecibos (Cache Local)
-    mockRecibos = [newRecibo, ...mockRecibos];
-    if (typeof window !== 'undefined') {
+      mockRecibos = [newRecibo, ...mockRecibos];
+      if (typeof window !== 'undefined') {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(mockRecibos));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(mockRecibos));
         } catch (e) {
-            console.error('Failure writing stored recibos', e);
+          console.error('Failure writing stored recibos', e);
         }
+      }
+
+      // Processa lançamentos correspondentes localmente para consistência em cache
+      const nextNum = newRecibo.numero;
+      const newLancamentosList: Lancamento[] = (recibo.itens || []).map(item => {
+        const matchPrenda = mockPrendas.find(p => p.id === item.prendaId);
+        const isRelampago = item.campanhaAplicada || item.multiplicadorAplicado > 1;
+        
+        return {
+          id: `lan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          numero_recibo: nextNum,
+          data_lancamento: new Date().toISOString().split('T')[0],
+          aluno_id: recibo.alunoId,
+          matricula: recibo.aluno_matricula || '',
+          nome_aluno: recibo.aluno_nome || '',
+          turma: recibo.aluno_turma || '',
+          ano_serie: 'EFAI',
+          turno: recibo.turno,
+          prenda_id: item.prendaId,
+          nome_prenda: item.nome_prenda || matchPrenda?.nome_prenda || matchPrenda?.nome || 'Prenda Avulsa',
+          tipo_prenda: item.prendaId === 'avulsa' ? 'avulsa' : 'regular',
+          quantidade: item.quantidade,
+          pontos_base: item.pontuacaoBase,
+          prenda_relampago: isRelampago ? 'sim' : 'não',
+          campanha_relampago_id: item.campanhaRelampagoId || undefined,
+          multiplicador: item.multiplicadorAplicado,
+          total_pontos: item.subtotal,
+          observacao: recibo.observacao,
+          usuario_responsavel: recibo.usuario_responsavel_nome || 'Operador',
+          status: 'valido',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          sincronizado: false
+        };
+      });
+
+      saveLancamentos([...newLancamentosList, ...mockLancamentos]);
+      return newRecibo;
     }
-
-    // Processa também os lançamentos correspondentes para cache local
-    const nextNum = newRecibo.numero;
-    const newLancamentosList: Lancamento[] = (recibo.itens || []).map(item => {
-      const matchPrenda = mockPrendas.find(p => p.id === item.prendaId);
-      const isRelampago = item.campanhaAplicada || item.multiplicadorAplicado > 1;
-      
-      return {
-        id: `lan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        numero_recibo: nextNum,
-        data_lancamento: new Date().toISOString().split('T')[0],
-        aluno_id: recibo.alunoId,
-        matricula: recibo.aluno_matricula || '',
-        nome_aluno: recibo.aluno_nome || '',
-        turma: recibo.aluno_turma || '',
-        ano_serie: 'EFAI',
-        turno: recibo.turno,
-        prenda_id: item.prendaId,
-        nome_prenda: item.nome_prenda || matchPrenda?.nome_prenda || matchPrenda?.nome || 'Prenda Avulsa',
-        tipo_prenda: item.prendaId === 'avulsa' ? 'avulsa' : 'regular',
-        quantidade: item.quantidade,
-        pontos_base: item.pontuacaoBase,
-        prenda_relampago: isRelampago ? 'sim' : 'não',
-        campanha_relampago_id: item.campanhaRelampagoId || undefined,
-        multiplicador: item.multiplicadorAplicado,
-        total_pontos: item.subtotal,
-        observacao: recibo.observacao,
-        usuario_responsavel: recibo.usuario_responsavel_nome || 'Operador',
-        status: 'valido',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        sincronizado: onlineSuccess
-      };
-    });
-
-    saveLancamentos([...newLancamentosList, ...mockLancamentos]);
-
-    // Caso o salvamento tenha sido offline, podemos depois rodar um sync de background.
-    // Para fins do mock, se o Supabase não estava disponível mas o fluxo não falhou,
-    // garantimos o registro local e o retorno do recibo com status offline.
-    return newRecibo;
 }
 
 // Calculadores Reativos de Estatisticas do Dashboard

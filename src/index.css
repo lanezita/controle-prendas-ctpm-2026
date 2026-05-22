@@ -19,10 +19,44 @@ html, body {
 }
 
 @media print {
-  body {
+  /* Hide headers, footers, and menus during receipt generation printing */
+  header, aside, #sidebar-backdrop, .no-print, .print\:hidden {
+    display: none !important;
+  }
+
+  /* Reset layout constraints for printing */
+  html, body {
+    width: 100% !important;
+    height: auto !important;
     background: white !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    font-size: 11px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Setup A4 paper portrait page with compact 6mm 8mm margins */
+  @page {
+    size: A4 portrait;
+    margin: 6mm 8mm;
+  }
+
+  /* Ensure the main layout and wrappers fill the printable page correctly with no scrollbars or padding cuts */
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Compact spacing for layout signatures */
+  .mt-12 {
+    margin-top: 1.5rem !important;
   }
 }
+
 

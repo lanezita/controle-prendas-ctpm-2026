@@ -412,9 +412,9 @@ export function Lancamento() {
 
       setIsConfirmacaoOpen(false);
       navigate(`/recibo/${novoRecibo.id}`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar recibo:', err);
-      alert('Ocorreu um erro ao salvar o recibo. Os dados foram mantidos localmente.');
+      alert(err?.message || 'Não foi possível salvar o recibo no banco de dados. Verifique a conexão e tente novamente.');
     } finally {
       setSalvando(false);
     }
