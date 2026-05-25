@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,6 +32,14 @@ export function Lancamento() {
   const [buscandoAlunos, setBuscandoAlunos] = useState(false);
   const [alunoSelecionado, setAlunoSelecionado] = useState<Aluno | null>(null);
   
+  // Autocomplete suggestions states
+  const [sugestoes, setSugestoes] = useState<Aluno[]>([]);
+  const [sugestoesLoading, setSugestoesLoading] = useState(false);
+  const [sugestoesError, setSugestoesError] = useState<string | null>(null);
+  const [showSugestoes, setShowSugestoes] = useState(false);
+  const [sugestaoSelecionadaIdx, setSugestaoSelecionadaIdx] = useState(-1);
+  const autocompleteRef = useRef<HTMLDivElement>(null);
+
   const [prendas, setPrendas] = useState<Prenda[]>([]);
   const [loadingPrendas, setLoadingPrendas] = useState(true);
   const [errorPrendas, setErrorPrendas] = useState<string | null>(null);
@@ -50,6 +58,164 @@ export function Lancamento() {
   const [isConfirmacaoOpen, setIsConfirmacaoOpen] = useState(false);
   const [isLimparConfirmacaoOpen, setIsLimparConfirmacaoOpen] = useState(false);
   const [salvando, setSalvando] = useState(false);
+
+  // Auto-fetch suggestions on typing with 300ms debounce
+  useEffect(() => {
+    if (!buscaAluno.trim() || buscaAluno.trim().length < 2 || !profile) {
+      setSugestoes([]);
+      setSugestoesError(null);
+      setShowSugestoes(false);
+      setSugestaoSelecionadaIdx(-1);
+      return;
+    }
+
+    setSugestoesLoading(true);
+    setSugestoesError(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        let data: any[] | null = null;
+        const qNormalized = buscaAluno.trim();
+
+        try {
+          // Prepare DB query for 'alunos'
+          let query = supabase.from('alunos').select('*');
+          
+          // Filter by active status if column exists
+          query = query.eq('status', 'ativo');
+
+          // Search criteria (matricula starts with or name matching partially)
+          query = query.or(`matricula.ilike.%${qNormalized}%,nome_completo.ilike.%${qNormalized}%`);
+
+          // Operational shift restrictions matching Auth levels
+          const userPerfil = profile.perfil?.toLowerCase();
+          const userTurno = profile.turno?.toLowerCase();
+          
+          if (userPerfil === 'manha') {
+            query = query.eq('turno', 'manha');
+          } else if (userPerfil === 'tarde') {
+            query = query.eq('turno', 'tarde');
+          } else if (userPerfil === 'consulta' && userTurno && userTurno !== 'ambos') {
+            query = query.eq('turno', userTurno);
+          }
+
+          // Limit suggestions to max 10 records
+          query = query.limit(10);
+
+          const res = await query;
+          if (!res.error && res.data) {
+            data = res.data;
+          } else if (res.error) {
+            console.warn('Autocomplete query failed on Supabase. Code/Message:', res.error);
+          }
+        } catch (dbErr) {
+          console.warn('Failed querying live student suggestions:', dbErr);
+        }
+
+        // Offline storage Fallback
+        if (!data || data.length === 0) {
+          const localAlunosKey = localStorage.getItem('ctpm_alunos_v1');
+          const localAlunosList = localAlunosKey ? JSON.parse(localAlunosKey) : [];
+          
+          const searchLow = qNormalized.toLowerCase();
+          let filtered = localAlunosList.filter((al: any) => {
+            const nameMatch = (al.nome_completo || al.nome || '').toLowerCase().includes(searchLow);
+            const matriculaMatch = (al.matricula || '').toLowerCase().includes(searchLow);
+            if (!nameMatch && !matriculaMatch) return false;
+
+            const userPerfil = profile.perfil?.toLowerCase();
+            const userTurno = profile.turno?.toLowerCase();
+            if (userPerfil === 'manha') {
+              return al.turno === 'manha';
+            } else if (userPerfil === 'tarde') {
+              return al.turno === 'tarde';
+            } else if (userPerfil === 'consulta' && userTurno && userTurno !== 'ambos') {
+              return al.turno === userTurno;
+            }
+            return true;
+          });
+
+          // Ensure active status exists or default true in fallback local matches
+          filtered = filtered.filter((al: any) => !al.status || al.status.toLowerCase() === 'ativo' || al.status.toLowerCase() === 'ativa');
+          data = filtered.slice(0, 10);
+        }
+
+        const mappedSuggestions = (data || []).map((al: any) => ({
+          id: al.id,
+          matricula: al.matricula,
+          nome_completo: al.nome_completo || al.nome || '',
+          codigo_turma: al.codigo_turma || al.turmaId || al.turma || '',
+          ano_serie: al.ano_serie || 'EFAI',
+          turno: al.turno
+        }));
+
+        setSugestoes(mappedSuggestions);
+        setShowSugestoes(true);
+        setSugestaoSelecionadaIdx(-1);
+      } catch (err) {
+        console.error('Erro na carga das sugestões do autocomplete:', err);
+        setSugestoesError('Não foi possível buscar alunos. Tente novamente.');
+      } finally {
+        setSugestoesLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [buscaAluno, profile]);
+
+  // Click outside detection to collapse suggestions panel safely
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+        setShowSugestoes(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const handleSelectAluno = (aluno: Aluno) => {
+    setAlunoSelecionado({
+      id: aluno.id,
+      matricula: aluno.matricula,
+      nome_completo: aluno.nome_completo,
+      codigo_turma: aluno.codigo_turma,
+      ano_serie: aluno.ano_serie || 'EFAI',
+      turno: aluno.turno
+    });
+    setBuscaAluno('');
+    setSugestoes([]);
+    setShowSugestoes(false);
+    setSugestaoSelecionadaIdx(-1);
+  };
+
+  const handleKeyDownInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSugestoes || sugestoes.length === 0) {
+      if (e.key === 'Enter') {
+        handleBuscarAluno();
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSugestaoSelecionadaIdx(prev => (prev + 1) % sugestoes.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSugestaoSelecionadaIdx(prev => (prev - 1 + sugestoes.length) % sugestoes.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (sugestaoSelecionadaIdx >= 0 && sugestaoSelecionadaIdx < sugestoes.length) {
+        handleSelectAluno(sugestoes[sugestaoSelecionadaIdx]);
+      } else {
+        handleSelectAluno(sugestoes[0]);
+      }
+    } else if (e.key === 'Escape') {
+      setShowSugestoes(false);
+    }
+  };
 
   useEffect(() => {
     console.log('Perfil logado no lançamento:', profile);
@@ -652,11 +818,11 @@ export function Lancamento() {
             </h2>
             
             {!alunoSelecionado ? (
-              <div className="space-y-3">
+              <div ref={autocompleteRef} className="relative space-y-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 flex justify-between">
                     <span>Matrícula ou Nome</span>
-                    {buscandoAlunos && <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />}
+                    {(buscandoAlunos || sugestoesLoading) && <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />}
                   </label>
                   <div className="flex space-x-2">
                     <input 
@@ -666,7 +832,7 @@ export function Lancamento() {
                       value={buscaAluno}
                       disabled={buscandoAlunos}
                       onChange={e => setBuscaAluno(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleBuscarAluno()}
+                      onKeyDown={handleKeyDownInput}
                     />
                     <button 
                       onClick={handleBuscarAluno}
@@ -676,6 +842,41 @@ export function Lancamento() {
                       <Search className="h-4 w-4" />
                     </button>
                   </div>
+
+                  {/* Sugestões do Autocomplete Dropdown */}
+                  {showSugestoes && (
+                    <div className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-2xl focus:outline-none divide-y divide-slate-100">
+                      {sugestoes.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-500 font-medium italic">
+                          Nenhum aluno encontrado.
+                        </div>
+                      ) : (
+                        sugestoes.map((al, idx) => {
+                          const isHighlighted = idx === sugestaoSelecionadaIdx;
+                          const shiftLabel = al.turno.toLowerCase() === 'manha' || al.turno.toLowerCase() === 'manhã' ? 'Matutino' : 'Vespertino';
+                          return (
+                            <div 
+                              key={al.id}
+                              onClick={() => handleSelectAluno(al)}
+                              onMouseEnter={() => setSugestaoSelecionadaIdx(idx)}
+                              className={`p-3 text-xs cursor-pointer select-none transition-colors text-left ${isHighlighted ? 'bg-indigo-55 bg-indigo-50 text-indigo-900 font-medium' : 'text-slate-700 bg-white hover:bg-slate-50'}`}
+                            >
+                              <div className="font-bold text-slate-900 text-sm">{al.nome_completo}</div>
+                              <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
+                                Matrícula: <span className="font-mono text-slate-700">{al.matricula}</span> • Turma: <span className="text-indigo-600 font-bold">{al.codigo_turma}</span> • {shiftLabel}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {sugestoesError && (
+                    <p className="mt-1-5 text-[10px] font-bold text-red-650 text-red-600 text-left">
+                      {sugestoesError}
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (
