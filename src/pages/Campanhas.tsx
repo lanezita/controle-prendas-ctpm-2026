@@ -15,9 +15,22 @@ import {
   Edit2,
   Trash2,
   Archive,
-  Ban
+  Ban,
+  Gift,
+  AlertTriangle,
+  CheckCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
+
+const CATEGORIAS_PREDEFINIDAS = [
+  'Brinquedo',
+  'Material escolar',
+  'Acessório',
+  'Higiene/Limpeza',
+  'Alimentação',
+  'Bebidas não alcoólicas',
+  'Outros'
+];
 import { isCampanhaVigente, getLocalDataFmt } from '../lib/mock-data';
 
 interface Campanha {
@@ -72,6 +85,20 @@ export function Campanhas() {
   const [turno, setTurno] = useState<'manha' | 'tarde' | 'ambos'>('manha');
   const [status, setStatus] = useState('ativa');
   const [observacao, setObservacao] = useState('');
+
+  // Quick Prenda modal states
+  const [quickPrendaModalOpen, setQuickPrendaModalOpen] = useState(false);
+  const [qpNome, setQpNome] = useState('');
+  const [qpCategoria, setQpCategoria] = useState(CATEGORIAS_PREDEFINIDAS[0]);
+  const [qpCustomCategoria, setQpCustomCategoria] = useState('');
+  const [qpVariacao, setQpVariacao] = useState('');
+  const [qpPontuacao, setQpPontuacao] = useState('');
+  const [qpObservacao, setQpObservacao] = useState('');
+  const [qpSaving, setQpSaving] = useState(false);
+  const [qpError, setQpError] = useState<string | null>(null);
+  const [qpSuccess, setQpSuccess] = useState<string | null>(null);
+
+  const canCreatePrenda = profile?.perfil === 'admin' || profile?.pode_cadastrar_prendas === true;
 
   const canCreate = profile?.perfil === 'admin' || profile?.pode_cadastrar_campanhas;
 
@@ -332,6 +359,85 @@ export function Campanhas() {
     setObservacao('');
   };
 
+  const handleSalvarQuickPrenda = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canCreatePrenda) {
+      setQpError('Seu perfil não tem permissão para cadastrar prendas.');
+      return;
+    }
+
+    setQpError(null);
+    setQpSuccess(null);
+
+    const nomeTrim = qpNome.trim();
+    if (!nomeTrim) {
+      setQpError('O nome da prenda é obrigatório.');
+      return;
+    }
+
+    const finalCategoria = qpCategoria === 'Outros' ? qpCustomCategoria.trim() : qpCategoria.trim();
+    if (!finalCategoria) {
+      setQpError('A categoria é obrigatória.');
+      return;
+    }
+
+    const pontosNum = Number(qpPontuacao);
+    if (isNaN(pontosNum) || pontosNum <= 0) {
+      setQpError('A pontuação base deve ser maior que zero.');
+      return;
+    }
+
+    // Duplicate check
+    const existeDuplicado = prendas.some(p => 
+      p.nome_prenda.toLowerCase().trim() === nomeTrim.toLowerCase() &&
+      (p.variacao || '').toLowerCase().trim() === qpVariacao.trim().toLowerCase()
+    );
+
+    if (existeDuplicado) {
+      setQpError('Uma prenda com este mesmo nome e variação já existe no sistema.');
+      return;
+    }
+
+    setQpSaving(true);
+    try {
+      const payload = {
+        nome_prenda: nomeTrim,
+        categoria: finalCategoria,
+        variacao: qpVariacao.trim() || null,
+        pontuacao_base: pontosNum,
+        status: 'ativo',
+        observacao: qpObservacao.trim() || null,
+        criado_em: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('prendas')
+        .insert([payload])
+        .select();
+
+      if (error) throw error;
+
+      setQpSuccess('Prenda cadastrada com sucesso.');
+      
+      // Reload prendas to include the new one
+      await fetchPrendas();
+
+      if (data && data[0]) {
+        setPrendaId(data[0].id);
+      }
+
+      setTimeout(() => {
+        setQuickPrendaModalOpen(false);
+      }, 1500);
+
+    } catch (err) {
+      console.error('Erro ao cadastrar prenda rápida:', err);
+      setQpError('Não foi possível cadastrar a prenda.');
+    } finally {
+      setQpSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -559,7 +665,28 @@ export function Campanhas() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Prenda Vinculada *</label>
+                    <div className="flex justify-between items-center mb-1.5 ml-1">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prenda Vinculada *</label>
+                      {canCreatePrenda && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQpNome('');
+                            setQpCategoria(CATEGORIAS_PREDEFINIDAS[0]);
+                            setQpCustomCategoria('');
+                            setQpVariacao('');
+                            setQpPontuacao('');
+                            setQpObservacao('');
+                            setQpError(null);
+                            setQpSuccess(null);
+                            setQuickPrendaModalOpen(true);
+                          }}
+                          className="text-[10px] font-black uppercase text-indigo-600 hover:text-slate-950 transition-colors cursor-pointer"
+                        >
+                          + Cadastrar nova prenda
+                        </button>
+                      )}
+                    </div>
                     <select 
                       required
                       className={`w-full h-12 bg-slate-50 border-none rounded-2xl px-4 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 transition-all ${errorPrendas ? 'ring-2 ring-red-500' : ''}`}
@@ -692,6 +819,167 @@ export function Campanhas() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Rápido de Cadastro de Prenda */}
+      {quickPrendaModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 select-none">
+          <div 
+            className="absolute inset-0 bg-slate-900/65 backdrop-blur-xs"
+            onClick={() => !qpSaving && setQuickPrendaModalOpen(false)}
+          />
+          <div className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col p-6 text-slate-850 text-left">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 mb-4">
+              <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-1.5 uppercase">
+                <Gift className="h-5 w-5 text-indigo-600" />
+                Cadastrar Prenda Rápido
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setQuickPrendaModalOpen(false)}
+                disabled={qpSaving}
+                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer animate-none"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarQuickPrenda} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                  Nome da Prenda *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Refrigerante 2L, Suco de Caixinha"
+                  className="w-full h-11 bg-slate-100/50 border border-slate-200 rounded-xl px-4 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 transition-all font-sans"
+                  value={qpNome}
+                  onChange={(e) => setQpNome(e.target.value)}
+                  disabled={qpSaving}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                    Categoria *
+                  </label>
+                  <select
+                    className="w-full h-11 bg-slate-100/50 border border-slate-200 rounded-xl px-4 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer font-sans"
+                    value={qpCategoria}
+                    onChange={(e) => setQpCategoria(e.target.value)}
+                    disabled={qpSaving}
+                  >
+                    {CATEGORIAS_PREDEFINIDAS.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                    Variação
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 2 Litros, 250ml"
+                    className="w-full h-11 bg-slate-100/50 border border-slate-200 rounded-xl px-4 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 transition-all font-sans"
+                    value={qpVariacao}
+                    onChange={(e) => setQpVariacao(e.target.value)}
+                    disabled={qpSaving}
+                  />
+                </div>
+              </div>
+
+              {qpCategoria === 'Outros' && (
+                <div className="animate-in fade-in duration-200">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                    Especifique a Categoria *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Especifique a categoria..."
+                    className="w-full h-11 bg-slate-100/50 border border-slate-200 rounded-xl px-4 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 transition-all font-sans"
+                    value={qpCustomCategoria}
+                    onChange={(e) => setQpCustomCategoria(e.target.value)}
+                    disabled={qpSaving}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                  Pontuação Base *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  placeholder="Ex: 10, 50"
+                  className="w-full h-11 bg-slate-100/50 border border-slate-200 rounded-xl px-4 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 transition-all font-sans"
+                  value={qpPontuacao}
+                  onChange={(e) => setQpPontuacao(e.target.value)}
+                  disabled={qpSaving}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                  Observação
+                </label>
+                <textarea
+                  placeholder="Adicione observações se houver..."
+                  rows={2}
+                  className="w-full bg-slate-100/50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 transition-all resize-none font-sans text-xs"
+                  value={qpObservacao}
+                  onChange={(e) => setQpObservacao(e.target.value)}
+                  disabled={qpSaving}
+                />
+              </div>
+
+              {qpError && (
+                <div className="flex items-center gap-1.5 p-3 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-[11px] font-bold uppercase tracking-wider leading-tight">
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                  <span>{qpError}</span>
+                </div>
+              )}
+
+              {qpSuccess && (
+                <div className="flex items-center gap-1.5 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-[11px] font-bold uppercase tracking-wider leading-tight">
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                  <span>{qpSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setQuickPrendaModalOpen(false)}
+                  disabled={qpSaving}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={qpSaving}
+                  className="flex items-center gap-1.5 px-5 py-2.5 bg-indigo-600 hover:bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 cursor-pointer"
+                >
+                  {qpSaving ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
+                      Salvando...
+                    </>
+                  ) : (
+                    'Salvar'
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
