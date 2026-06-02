@@ -186,20 +186,36 @@ export function getLocalDataFmt(): string {
   }
 }
 
-export function isCampanhaVigente(campanha: any): boolean {
-  if (!campanha) return false;
+export function getStatusCampanha(campanha: any): 'inativa' | 'agendada' | 'ativa' | 'expirada' {
+  if (!campanha) return 'inativa';
   
   const status = (campanha.status || '').toLowerCase();
-  if (status !== 'ativa') return false;
+  if (status === 'inativa' || status === 'encerrada' || status === 'cancelada') {
+    return 'inativa';
+  }
 
   const data_inicio = campanha.data_inicio || campanha.dataInicial;
   const data_fim = campanha.data_fim || campanha.dataFinal;
   
-  if (!data_inicio || !data_fim) return false;
+  if (!data_inicio || !data_fim) return 'inativa';
 
   const hoje = getLocalDataFmt();
   
-  return hoje >= data_inicio && hoje <= data_fim;
+  if (hoje < data_inicio) {
+    return 'agendada';
+  }
+  if (hoje >= data_inicio && hoje <= data_fim && status === 'ativa') {
+    return 'ativa';
+  }
+  if (hoje > data_fim) {
+    return 'expirada';
+  }
+  
+  return 'inativa';
+}
+
+export function isCampanhaVigente(campanha: any): boolean {
+  return getStatusCampanha(campanha) === 'ativa';
 }
 
 const hoje = getLocalDataFmt();

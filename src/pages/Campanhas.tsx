@@ -31,7 +31,7 @@ const CATEGORIAS_PREDEFINIDAS = [
   'Bebidas não alcoólicas',
   'Outros'
 ];
-import { isCampanhaVigente, getLocalDataFmt } from '../lib/mock-data';
+import { isCampanhaVigente, getLocalDataFmt, getStatusCampanha } from '../lib/mock-data';
 
 interface Campanha {
   id: string;
@@ -479,31 +479,29 @@ export function Campanhas() {
               <div className="p-6 flex-1">
                 <div className="flex justify-between items-start mb-4">
                   {(() => {
-                    const isVigente = isCampanhaVigente(campanha);
-                    if (campanha.status === 'ativa') {
-                      if (isVigente) {
-                        return (
-                          <div className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-800">
-                            Ativa
-                          </div>
-                        );
-                      } else {
-                        return (
-                          <div className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-800">
-                            Expirada
-                          </div>
-                        );
-                      }
-                    } else if (campanha.status === 'encerrada') {
+                    const statusVisual = getStatusCampanha(campanha);
+                    if (statusVisual === 'ativa') {
                       return (
-                        <div className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-800">
-                          Encerrada
+                        <div className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-800">
+                          Ativa
+                        </div>
+                      );
+                    } else if (statusVisual === 'agendada') {
+                      return (
+                        <div className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-800">
+                          Agendada
+                        </div>
+                      );
+                    } else if (statusVisual === 'expirada') {
+                      return (
+                        <div className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-800">
+                          Expirada
                         </div>
                       );
                     } else {
                       return (
-                        <div className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-rose-100 text-rose-800">
-                          {campanha.status}
+                        <div className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-800">
+                          Inativa
                         </div>
                       );
                     }
