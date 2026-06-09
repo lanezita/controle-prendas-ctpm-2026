@@ -111,6 +111,7 @@ export interface Recibo {
   // Status de Sincronizacao
   sincronizado?: boolean;
   offline_id?: string;
+  numero_recibo?: string | number;
 }
 
 // Dados Simulados
@@ -945,42 +946,7 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
       // Group items safely
       const itemsMap: Record<string, ReciboItem[]> = {};
 
-      // 1. Try to fetch lancamentos from Supabase
-      try {
-        const { data: dbLancamentos, error: lancError } = await supabase
-          .from('lancamentos')
-          .select('*');
-
-        if (lancError) {
-          console.error('Error fetching lancamentos from Supabase:', lancError);
-        } else if (dbLancamentos) {
-          dbLancamentos.forEach((l: any) => {
-            const key = l.numero_recibo;
-            if (key) {
-              if (!itemsMap[key]) {
-                itemsMap[key] = [];
-              }
-              itemsMap[key].push({
-                id: l.id,
-                reciboId: l.recibo_id || '', // will be mapped correctly below
-                prendaId: l.prenda_id || 'avulsa',
-                quantidade: l.quantidade,
-                pontuacaoBase: l.pontos_base,
-                multiplicadorAplicado: l.multiplicador || 1,
-                subtotal: l.total_pontos,
-                campanhaAplicada: l.prenda_relampago === 'sim' || (l.multiplicador || 1) > 1,
-                campanhaRelampagoId: l.campanha_relampago_id,
-                nome_prenda: l.nome_prenda,
-                variacao: l.tipo_prenda === 'avulsa' ? 'Avulsa' : 'Regular'
-              });
-            }
-          });
-        }
-      } catch (err) {
-        console.warn('Exception during lancamentos fetch:', err);
-      }
-
-      // 2. Try to fetch recibo_itens from Supabase
+      // 1. Try to fetch recibo_itens from Supabase
       try {
         const { data: dbReciboItens, error: itemsError } = await supabase
           .from('recibo_itens')
@@ -1001,14 +967,14 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
                   id: i.id,
                   reciboId: i.recibo_id || '',
                   prendaId: i.prenda_id || 'avulsa',
-                  quantidade: i.quantidade,
-                  pontuacaoBase: i.pontos_base || i.pontuacao_base || 0,
-                  multiplicadorAplicado: i.multiplicador || 1,
-                  subtotal: i.total_pontos || i.subtotal || 0,
-                  campanhaAplicada: i.prenda_relampago === 'sim' || (i.multiplicador || 1) > 1,
+                  quantidade: Number(i.quantidade || 0),
+                  pontuacaoBase: Number(i.pontuacao_base || 0),
+                  multiplicadorAplicado: Number(i.multiplicador_aplicado ?? i.multiplicador ?? 1),
+                  subtotal: Number(i.subtotal_pontos ?? i.total_pontos ?? i.subtotal ?? 0),
+                  campanhaAplicada: i.eh_relampago === 'sim' || i.eh_relampago === true || (i.multiplicador_aplicado || 1) > 1,
                   campanhaRelampagoId: i.campanha_relampago_id,
                   nome_prenda: i.nome_prenda || '',
-                  variacao: i.tipo_prenda === 'avulsa' ? 'Avulsa' : 'Regular'
+                  variacao: 'Regular'
                 });
               }
             }
@@ -1032,20 +998,21 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
 
           return {
             id: row.id,
-            numero: row.numero_recibo,
+            numero: String(row.numero_recibo ?? ''),
+            numero_recibo: row.numero_recibo,
             dataHora: row.criado_em || row.created_at || row.data_geracao || new Date().toISOString(),
             alunoId: row.aluno_id || '',
-            turmaId: row.aluno_turma || '',
-            turno: row.aluno_turno as 'manha' | 'tarde',
+            turmaId: row.aluno_turma || row.codigo_turma || '',
+            turno: (row.aluno_turno || row.turno) as 'manha' | 'tarde',
             total_pontos: row.total_pontos || 0,
             usuarioId: row.usuario_id || '',
-            status: row.status as 'ativo' | 'cancelado',
+            status: (row.status as 'ativo' | 'cancelado') || 'ativo',
             itens: mappedItems,
             observacao: row.observacao,
-            aluno_nome: row.aluno_nome,
-            aluno_matricula: row.aluno_matricula,
-            aluno_turma: row.aluno_turma,
-            aluno_turno: row.aluno_turno,
+            aluno_nome: row.nome_aluno || row.aluno_nome || '',
+            aluno_matricula: row.matricula || row.aluno_matricula || '',
+            aluno_turma: row.codigo_turma || row.aluno_turma || '',
+            aluno_turno: row.turno || row.aluno_turno || '',
             usuario_responsavel_nome: row.usuario_responsavel_nome,
             usuario_responsavel_perfil: row.usuario_responsavel_perfil,
             cancelado_por: row.cancelado_por,
@@ -1061,7 +1028,7 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
         const merged = [...mappedRecibos, ...localOfflineOnly];
         
         // Let's sort to keep consistent sequence (by parsed number or date desc)
-        merged.sort((a, b) => b.numero.localeCompare(a.numero));
+        merged.sort((a, b) => Number(b.numero_recibo ?? b.numero ?? 0) - Number(a.numero_recibo ?? a.numero ?? 0));
 
         // Reassign the export variable so that other pages (like Ranking) can read it reactively
         mockRecibos = merged;

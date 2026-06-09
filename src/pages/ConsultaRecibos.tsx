@@ -199,7 +199,7 @@ export function ConsultaRecibos() {
     const matriculaAluno = r.aluno_matricula || aluno?.matricula || '';
     
     return (
-      r.numero.toLowerCase().includes(searchLower) ||
+      String(r.numero ?? r.numero_recibo ?? '').toLowerCase().includes(searchLower) ||
       nomeAluno.includes(searchLower) ||
       matriculaAluno.includes(searchLower)
     );
