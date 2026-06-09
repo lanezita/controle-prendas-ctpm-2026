@@ -935,82 +935,111 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
       const { data: dbRecibos, error: recError } = await supabase
         .from('recibos')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('criado_em', { ascending: false });
 
       if (recError) {
         console.error('Error fetching receipts from Supabase:', recError);
         throw recError;
       }
 
-      let dbLancamentos = null;
+      // Group items safely
+      const itemsMap: Record<string, ReciboItem[]> = {};
+
+      // 1. Try to fetch lancamentos from Supabase
       try {
-        const { data: lancs, error: lancError } = await supabase
+        const { data: dbLancamentos, error: lancError } = await supabase
           .from('lancamentos')
           .select('*');
+
         if (lancError) {
           console.error('Error fetching lancamentos from Supabase:', lancError);
-        } else {
-          dbLancamentos = lancs;
+        } else if (dbLancamentos) {
+          dbLancamentos.forEach((l: any) => {
+            const key = l.numero_recibo;
+            if (key) {
+              if (!itemsMap[key]) {
+                itemsMap[key] = [];
+              }
+              itemsMap[key].push({
+                id: l.id,
+                reciboId: l.recibo_id || '', // will be mapped correctly below
+                prendaId: l.prenda_id || 'avulsa',
+                quantidade: l.quantidade,
+                pontuacaoBase: l.pontos_base,
+                multiplicadorAplicado: l.multiplicador || 1,
+                subtotal: l.total_pontos,
+                campanhaAplicada: l.prenda_relampago === 'sim' || (l.multiplicador || 1) > 1,
+                campanhaRelampagoId: l.campanha_relampago_id,
+                nome_prenda: l.nome_prenda,
+                variacao: l.tipo_prenda === 'avulsa' ? 'Avulsa' : 'Regular'
+              });
+            }
+          });
         }
-      } catch (lancErr) {
-        console.error('Erro secundário ao buscar lancamentos:', lancErr);
+      } catch (err) {
+        console.warn('Exception during lancamentos fetch:', err);
       }
 
-      // Group lancamentos by numero_recibo
-      const lancamentosMap: Record<string, any[]> = {};
-      if (dbLancamentos) {
-        dbLancamentos.forEach(l => {
-          if (!l.numero_recibo) return;
-          if (!lancamentosMap[l.numero_recibo]) {
-            lancamentosMap[l.numero_recibo] = [];
-          }
-          lancamentosMap[l.numero_recibo].push(l);
-        });
+      // 2. Try to fetch recibo_itens from Supabase
+      try {
+        const { data: dbReciboItens, error: itemsError } = await supabase
+          .from('recibo_itens')
+          .select('*');
+
+        if (itemsError) {
+          console.warn('Error fetching recibo_itens from Supabase:', itemsError);
+        } else if (dbReciboItens) {
+          dbReciboItens.forEach((i: any) => {
+            const key = i.recibo_id || i.numero_recibo;
+            if (key) {
+              if (!itemsMap[key]) {
+                itemsMap[key] = [];
+              }
+              const isDuplicate = itemsMap[key].some((exist: any) => exist.id === i.id);
+              if (!isDuplicate) {
+                itemsMap[key].push({
+                  id: i.id,
+                  reciboId: i.recibo_id || '',
+                  prendaId: i.prenda_id || 'avulsa',
+                  quantidade: i.quantidade,
+                  pontuacaoBase: i.pontos_base || i.pontuacao_base || 0,
+                  multiplicadorAplicado: i.multiplicador || 1,
+                  subtotal: i.total_pontos || i.subtotal || 0,
+                  campanhaAplicada: i.prenda_relampago === 'sim' || (i.multiplicador || 1) > 1,
+                  campanhaRelampagoId: i.campanha_relampago_id,
+                  nome_prenda: i.nome_prenda || '',
+                  variacao: i.tipo_prenda === 'avulsa' ? 'Avulsa' : 'Regular'
+                });
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Exception during recibo_itens fetch:', err);
       }
 
       if (dbRecibos) {
-        const normalizarStatus = (s: string | undefined | null): 'ativo' | 'cancelado' => {
-          if (!s) return 'ativo';
-          const val = s.toLowerCase().trim();
-          if (val === 'cancelado' || val === 'cancelada') return 'cancelado';
-          return 'ativo';
-        };
-
-        const getTurnoNormalizado = (t: string | undefined | null): 'manha' | 'tarde' => {
-          if (!t) return 'manha';
-          const lower = t.toLowerCase().trim();
-          if (lower === 'manhã' || lower === 'manha' || lower === 'matutino') return 'manha';
-          if (lower === 'tarde' || lower === 'vespertino') return 'tarde';
-          return 'manha';
-        };
-
         // Map table rows to Recibo interface
         const mappedRecibos: Recibo[] = dbRecibos.map((row: any) => {
-          const itemsFromLancamentos = lancamentosMap[row.numero_recibo || ''] || [];
-          const mappedItems: ReciboItem[] = itemsFromLancamentos.map((l: any) => ({
-            id: l.id,
-            reciboId: row.id,
-            prendaId: l.prenda_id || 'avulsa',
-            quantidade: l.quantidade,
-            pontuacaoBase: l.pontos_base,
-            multiplicadorAplicado: l.multiplicador || 1,
-            subtotal: l.total_pontos,
-            campanhaAplicada: l.prenda_relampago === 'sim' || (l.multiplicador || 1) > 1,
-            campanhaRelampagoId: l.campanha_relampago_id,
-            nome_prenda: l.nome_prenda,
-            variacao: l.tipo_prenda === 'avulsa' ? 'Avulsa' : 'Regular'
-          }));
+          const itemsByNumero = itemsMap[row.numero_recibo] || [];
+          const itemsById = itemsMap[row.id] || [];
+          
+          const combinedItemsMap = new Map<string, ReciboItem>();
+          itemsByNumero.forEach(item => combinedItemsMap.set(item.id, { ...item, reciboId: row.id }));
+          itemsById.forEach(item => combinedItemsMap.set(item.id, { ...item, reciboId: row.id }));
+          
+          const mappedItems = Array.from(combinedItemsMap.values());
 
           return {
             id: row.id,
-            numero: row.numero_recibo || '',
-            dataHora: row.created_at || row.data_geracao || new Date().toISOString(),
+            numero: row.numero_recibo,
+            dataHora: row.criado_em || row.created_at || row.data_geracao || new Date().toISOString(),
             alunoId: row.aluno_id || '',
             turmaId: row.aluno_turma || '',
-            turno: getTurnoNormalizado(row.aluno_turno),
+            turno: row.aluno_turno as 'manha' | 'tarde',
             total_pontos: row.total_pontos || 0,
             usuarioId: row.usuario_id || '',
-            status: normalizarStatus(row.status),
+            status: row.status as 'ativo' | 'cancelado',
             itens: mappedItems,
             observacao: row.observacao,
             aluno_nome: row.aluno_nome,
@@ -1031,12 +1060,8 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
 
         const merged = [...mappedRecibos, ...localOfflineOnly];
         
-        // Let's sort to keep consistent sequence safely
-        merged.sort((a, b) => {
-          const numA = a.numero || '';
-          const numB = b.numero || '';
-          return numB.localeCompare(numA);
-        });
+        // Let's sort to keep consistent sequence (by parsed number or date desc)
+        merged.sort((a, b) => b.numero.localeCompare(a.numero));
 
         // Reassign the export variable so that other pages (like Ranking) can read it reactively
         mockRecibos = merged;
@@ -1050,7 +1075,6 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
       }
     } catch (e) {
       console.warn('Erro fetchRecibosFromDB:', e);
-      throw e;
     }
   }
 
