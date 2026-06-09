@@ -939,21 +939,28 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
 
       if (recError) {
         console.error('Error fetching receipts from Supabase:', recError);
-        return mockRecibos;
+        throw recError;
       }
 
-      const { data: dbLancamentos, error: lancError } = await supabase
-        .from('lancamentos')
-        .select('*');
-
-      if (lancError) {
-        console.error('Error fetching lancamentos from Supabase:', lancError);
+      let dbLancamentos = null;
+      try {
+        const { data: lancs, error: lancError } = await supabase
+          .from('lancamentos')
+          .select('*');
+        if (lancError) {
+          console.error('Error fetching lancamentos from Supabase:', lancError);
+        } else {
+          dbLancamentos = lancs;
+        }
+      } catch (lancErr) {
+        console.error('Erro secundário ao buscar lancamentos:', lancErr);
       }
 
       // Group lancamentos by numero_recibo
       const lancamentosMap: Record<string, any[]> = {};
       if (dbLancamentos) {
         dbLancamentos.forEach(l => {
+          if (!l.numero_recibo) return;
           if (!lancamentosMap[l.numero_recibo]) {
             lancamentosMap[l.numero_recibo] = [];
           }
@@ -962,9 +969,24 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
       }
 
       if (dbRecibos) {
+        const normalizarStatus = (s: string | undefined | null): 'ativo' | 'cancelado' => {
+          if (!s) return 'ativo';
+          const val = s.toLowerCase().trim();
+          if (val === 'cancelado' || val === 'cancelada') return 'cancelado';
+          return 'ativo';
+        };
+
+        const getTurnoNormalizado = (t: string | undefined | null): 'manha' | 'tarde' => {
+          if (!t) return 'manha';
+          const lower = t.toLowerCase().trim();
+          if (lower === 'manhã' || lower === 'manha' || lower === 'matutino') return 'manha';
+          if (lower === 'tarde' || lower === 'vespertino') return 'tarde';
+          return 'manha';
+        };
+
         // Map table rows to Recibo interface
         const mappedRecibos: Recibo[] = dbRecibos.map((row: any) => {
-          const itemsFromLancamentos = lancamentosMap[row.numero_recibo] || [];
+          const itemsFromLancamentos = lancamentosMap[row.numero_recibo || ''] || [];
           const mappedItems: ReciboItem[] = itemsFromLancamentos.map((l: any) => ({
             id: l.id,
             reciboId: row.id,
@@ -981,14 +1003,14 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
 
           return {
             id: row.id,
-            numero: row.numero_recibo,
+            numero: row.numero_recibo || '',
             dataHora: row.created_at || row.data_geracao || new Date().toISOString(),
             alunoId: row.aluno_id || '',
             turmaId: row.aluno_turma || '',
-            turno: row.aluno_turno as 'manha' | 'tarde',
+            turno: getTurnoNormalizado(row.aluno_turno),
             total_pontos: row.total_pontos || 0,
             usuarioId: row.usuario_id || '',
-            status: row.status as 'ativo' | 'cancelado',
+            status: normalizarStatus(row.status),
             itens: mappedItems,
             observacao: row.observacao,
             aluno_nome: row.aluno_nome,
@@ -1009,8 +1031,12 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
 
         const merged = [...mappedRecibos, ...localOfflineOnly];
         
-        // Let's sort to keep consistent sequence (by parsed number or date desc)
-        merged.sort((a, b) => b.numero.localeCompare(a.numero));
+        // Let's sort to keep consistent sequence safely
+        merged.sort((a, b) => {
+          const numA = a.numero || '';
+          const numB = b.numero || '';
+          return numB.localeCompare(numA);
+        });
 
         // Reassign the export variable so that other pages (like Ranking) can read it reactively
         mockRecibos = merged;
@@ -1024,6 +1050,7 @@ export async function fetchRecibosFromDB(): Promise<Recibo[]> {
       }
     } catch (e) {
       console.warn('Erro fetchRecibosFromDB:', e);
+      throw e;
     }
   }
 

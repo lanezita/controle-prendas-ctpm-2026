@@ -24,19 +24,26 @@ export function ConsultaRecibos() {
   const [recibosList, setRecibosList] = useState(mockRecibos);
   const [solicitacoesList, setSolicitacoesList] = useState<SolicitacaoCancelamento[]>(mockSolicitacoes);
   const [loading, setLoading] = useState(true);
+  const [errorText, setErrorText] = useState<string | null>(null);
 
   // Carrega as solicitações e recibos do Supabase se disponível ou lê do cache local
   useEffect(() => {
     async function loadData() {
       setLoading(true);
+      setErrorText(null);
       try {
         const resRecibos = await fetchRecibosFromDB();
         setRecibosList([...resRecibos]);
         
-        const resSols = await fetchSolicitacoesCancelamentoFromDB();
-        setSolicitacoesList([...resSols]);
+        try {
+          const resSols = await fetchSolicitacoesCancelamentoFromDB();
+          setSolicitacoesList([...resSols]);
+        } catch (solErr) {
+          console.error('Erro secundário ao buscar solicitações do Supabase:', solErr);
+        }
       } catch (err) {
-        console.error('Erro ao buscar dados do Supabase:', err);
+        console.error('Erro completo ao buscar dados do Supabase:', err);
+        setErrorText('Não foi possível carregar os recibos. Verifique a conexão ou tente novamente.');
       } finally {
         setLoading(false);
       }
@@ -170,8 +177,8 @@ export function ConsultaRecibos() {
   // Mapeamento do Turno de atuação com tratamento seguro
   const userTurno = getTurnoNormalizado(profile?.turno || (profile?.perfil === 'manha' ? 'manha' : profile?.perfil === 'tarde' ? 'tarde' : null));
 
-  // Filtragem de Recibos de acordo com regras de turno e permissões
-  const baseRecibos = profile?.perfil === 'admin' || profile?.perfil === 'consulta'
+  // Filtragem de Recibos de acordo com regras de turno e permissões (Rule 3)
+  const baseRecibos = profile?.perfil === 'admin' || profile?.turno === 'ambos' || userTurno === 'ambos'
     ? recibosList 
     : recibosList.filter(r => {
         const turnoRec = getTurnoNormalizado(r.aluno_turno || r.turno);
@@ -301,6 +308,15 @@ export function ConsultaRecibos() {
                     </div>
                   </td>
                 </tr>
+              ) : errorText ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-rose-500 font-medium whitespace-normal">
+                    <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
+                      <AlertCircle className="h-6 w-6 text-rose-500 flex-shrink-0" />
+                      <span>{errorText}</span>
+                    </div>
+                  </td>
+                </tr>
               ) : recibosFiltrados.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
@@ -323,19 +339,22 @@ export function ConsultaRecibos() {
                   return (
                     <tr key={r.id} className="hover:bg-slate-50">
                       <td className="px-6 py-4">
-                        {temSolicitacaoPendente ? (
-                          <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                            Cancelamento solicitado
-                          </span>
-                        ) : r.status.toLowerCase() === 'ativo' ? (
-                          <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Ativo
-                          </span>
-                        ) : (
-                          <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-100 text-rose-800 border border-rose-200">
-                            Cancelado
-                          </span>
-                        )}
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          {((r.status || '').toLowerCase() === 'ativo') ? (
+                            <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Ativo
+                            </span>
+                          ) : (
+                            <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                              Cancelado
+                            </span>
+                          )}
+                          {temSolicitacaoPendente && (
+                            <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                              Cancelamento solicitado
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 font-semibold text-slate-800">#{r.numero}</td>
                       <td className="px-6 py-4 text-slate-600">{new Date(r.dataHora).toLocaleDateString('pt-BR')}</td>
@@ -361,7 +380,7 @@ export function ConsultaRecibos() {
 
                           {/* Ação para Operador (Manhã ou Tarde): Solicitar cancelamento do turno correspondente */}
                           {(profile?.perfil === 'manha' || profile?.perfil === 'tarde') && 
-                           r.status.toLowerCase() === 'ativo' && 
+                           (r.status || '').toLowerCase() === 'ativo' && 
                            !temSolicitacaoPendente && 
                            (getTurnoNormalizado(r.aluno_turno || r.turno) === profile?.perfil) && (
                             <button 
@@ -374,7 +393,7 @@ export function ConsultaRecibos() {
                           )}
 
                           {/* Ação para Admin */}
-                          {profile?.perfil === 'admin' && r.status.toLowerCase() === 'ativo' && temSolicitacaoPendente && (
+                          {profile?.perfil === 'admin' && (r.status || '').toLowerCase() === 'ativo' && temSolicitacaoPendente && (
                             <button 
                               className="text-white hover:bg-amber-700 bg-amber-600 p-1.5 rounded-md cursor-pointer inline-flex items-center"
                               title="Analisar Solicitação Pendente"
