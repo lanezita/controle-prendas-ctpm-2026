@@ -514,10 +514,28 @@ export function Lancamento() {
   };
 
   const handleGerarReciboFinal = async () => {
-    if (!alunoSelecionado || itens.length === 0 || !profile || salvando) return;
+    if (!alunoSelecionado) {
+      alert('Selecione um aluno antes de gerar o recibo.');
+      return;
+    }
+    if (itens.length === 0) {
+      alert('Adicione pelo menos uma prenda ao recibo.');
+      return;
+    }
+    if (!profile) {
+      alert('Sessão inválida do operador.');
+      return;
+    }
+    if (salvando) return;
 
     setSalvando(true);
+    console.log('Iniciando geração de recibo');
+
     try {
+      // Logs de depuração obrigatórios
+      console.log('Aluno selecionado:', alunoSelecionado);
+      console.log('Itens do recibo:', itens);
+
       // Mapeamos os itens salvando snapshots dos dados e os IDs de campanha
       const itensComSnapshots = itens.map(item => {
         const matchPrenda = prendas.find(p => p.id === item.prendaId);
@@ -544,14 +562,14 @@ export function Lancamento() {
         };
       });
 
-      const novoRecibo = await addMockRecibo({
+      const payload = {
         dataHora: new Date().toISOString(),
         alunoId: alunoSelecionado.id,
         turmaId: alunoSelecionado.codigo_turma, 
         turno: alunoSelecionado.turno as any,
         total_pontos: totalGeral,
         usuarioId: profile.id,
-        status: 'ativo',
+        status: 'ativo' as 'ativo' | 'cancelado',
         observacao: observacao.trim() || undefined,
         itens: itensComSnapshots,
         
@@ -564,7 +582,11 @@ export function Lancamento() {
         // Snapshots do usuário responsável
         usuario_responsavel_nome: profile.nome,
         usuario_responsavel_perfil: profile.perfil
-      });
+      };
+
+      console.log('Payload RPC:', payload);
+
+      const novoRecibo = await addMockRecibo(payload);
 
       // Limpa dados temporários salvos no localStorage
       try {
@@ -572,15 +594,15 @@ export function Lancamento() {
         localStorage.removeItem('ctpm_lancamento_observacao_draft');
         localStorage.removeItem('ctpm_prenda_selecionada');
         localStorage.removeItem('ctpm_prenda_quantidade');
-      } catch (e) {
-        console.error('Failure clearing draft keys:', e);
+      } catch (error) {
+        console.error('Failure clearing draft keys:', error);
       }
 
       setIsConfirmacaoOpen(false);
       navigate(`/recibo/${novoRecibo.id}`);
-    } catch (err: any) {
-      console.error('Erro ao salvar recibo:', err);
-      alert(err?.message || 'Não foi possível salvar o recibo no banco de dados. Verifique a conexão e tente novamente.');
+    } catch (error: any) {
+      console.error('Erro ao gerar recibo:', error);
+      alert('Não foi possível gerar o recibo. Verifique os dados e tente novamente.\n' + (error?.message || String(error)));
     } finally {
       setSalvando(false);
     }

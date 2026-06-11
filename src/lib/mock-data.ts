@@ -497,16 +497,24 @@ export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Prom
             nome_prenda: item.nome_prenda || 'Prenda Avulsa',
             tipo_prenda: item.prendaId === 'avulsa' || !validPrendaId ? 'avulsa' : 'regular',
             quantidade: item.quantidade,
+            
+            // Compatibilidade dupla de nomes de colunas
+            pontuacao_base: item.pontuacaoBase,
             pontos_base: item.pontuacaoBase,
-            prenda_relampago: isRelampago ? 'sim' : 'não',
+            
+            multiplicador_aplicado: item.multiplicadorAplicado,
             multiplicador: item.multiplicadorAplicado,
+            
+            subtotal_pontos: item.subtotal,
             total_pontos: item.subtotal,
-            campanha_relampago_id: validCampanhaId
+            
+            campanha_relampago_id: validCampanhaId,
+            eh_relampago: isRelampago,
+            prenda_relampago: isRelampago ? 'sim' : 'não'
           };
         });
 
-        // Chamamos a RPC que processará a inserção de forma transacional e atômica
-        const { data, error } = await supabase.rpc('lancar_recibo_transacional', {
+        const payload = {
           p_aluno_id: recibo.alunoId,
           p_aluno_matricula: recibo.aluno_matricula || '',
           p_aluno_nome: recibo.aluno_nome || '',
@@ -518,14 +526,27 @@ export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Prom
           p_usuario_perfil: recibo.usuario_responsavel_perfil || 'admin',
           p_observacao: recibo.observacao || '',
           p_itens: itensEnvio
+        };
+
+        console.log('Aluno selecionado:', {
+          id: recibo.alunoId,
+          nome_completo: recibo.aluno_nome,
+          matricula: recibo.aluno_matricula,
+          codigo_turma: recibo.aluno_turma,
+          turno: recibo.turno
         });
+        console.log('Itens do recibo:', recibo.itens);
+        console.log('Payload RPC:', payload);
+
+        // Chamamos a RPC que processará a inserção de forma transacional e atômica
+        const { data, error } = await supabase.rpc('lancar_recibo_transacional', payload);
 
         if (error) {
           console.error('Supabase transactional write failed completely:', error);
           throw new Error(error.message || JSON.stringify(error));
         }
 
-        if (data && data.numero_recibo) {
+        if (data && (data.numero_recibo || data.id)) {
           const nextNum = data.numero_recibo;
           const officialId = data.id || `r_${Date.now()}`;
           
