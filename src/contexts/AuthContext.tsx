@@ -22,6 +22,7 @@ interface AuthContextType {
   user: User | null;
   profile: UsuarioPerfil | null;
   loading: boolean;
+  error: string | null;
   logout: () => Promise<void>;
 }
 
@@ -32,14 +33,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     user: User | null;
     profile: UsuarioPerfil | null;
     loading: boolean;
+    error: string | null;
   }>({
     user: null,
     profile: null,
-    loading: true
+    loading: true,
+    error: null
   });
 
   useEffect(() => {
-    // Verificação preventiva de sessão para mitigar e resolver erros de "Refresh Token Not Found"
+    // Safety timer to prevent getting stuck on infinite spinner
+    const safetyTimer = setTimeout(() => {
+      setState((prev) => {
+        if (prev.loading) {
+          console.warn('Timeout de inicialização do Supabase Auth atingido (6s). Liberando interface.');
+          return { ...prev, loading: false, error: 'O tempo limite de conexão expirou. Algumas funções podem estar indisponíveis ou lentas.' };
+        }
+        return prev;
+      });
+    }, 6000);
+
     const verificarSessaoInicial = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -57,11 +70,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             }
             await supabase.auth.signOut();
-            setState({ user: null, profile: null, loading: false });
+            setState({ user: null, profile: null, loading: false, error: 'Sessão expirada. Faça login novamente.' });
+          } else {
+            setState((prev) => ({ ...prev, error: error.message }));
           }
+        } else if (!session) {
+          setState({ user: null, profile: null, loading: false, error: null });
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Falha ao verificar sessão inicial preventivamente:', err);
+        setState({ user: null, profile: null, loading: false, error: err?.message || 'Erro de conexão inicial.' });
       }
     };
 
@@ -75,7 +93,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Se não há usuário, limpa o estado
       if (!user) {
-        setState({ user: null, profile: null, loading: false });
+        clearTimeout(safetyTimer);
+        setState({ user: null, profile: null, loading: false, error: null });
         return;
       }
 
@@ -89,6 +108,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .eq('id', user.id)
           .single();
 
+        clearTimeout(safetyTimer);
+
         if (error) {
           // Se o erro for de autenticação ou token, desloga o usuário
           if (error.message.includes('Refresh Token Not Found')) {
@@ -100,22 +121,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             }
             await supabase.auth.signOut();
-            setState({ user: null, profile: null, loading: false });
+            setState({ user: null, profile: null, loading: false, error: 'Sessão expirada. Por favor, conecte-se novamente.' });
             return;
           }
           console.error('Perfil não encontrado para o usuário:', user.email);
-          setState({ user, profile: null, loading: false });
+          setState({ user, profile: null, loading: false, error: 'Seu perfil de usuário não foi encontrado no banco de dados. Contate um administrador.' });
           return;
         }
 
-        setState({ user, profile: data as UsuarioPerfil, loading: false });
-      } catch (err) {
+        setState({ user, profile: data as UsuarioPerfil, loading: false, error: null });
+      } catch (err: any) {
+        clearTimeout(safetyTimer);
         console.error('Erro ao buscar perfil:', err);
-        setState({ user, profile: null, loading: false });
+        setState({ user, profile: null, loading: false, error: err?.message || 'Erro ao carregar perfil do utilizador.' });
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const logout = async () => {
@@ -130,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('Erro ao chamar supabase.auth.signOut(), prosseguindo para limpeza local:', err);
     } finally {
-      setState({ user: null, profile: null, loading: false });
+      setState({ user: null, profile: null, loading: false, error: null });
     }
   };
 
@@ -138,8 +163,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     user: state.user,
     profile: state.profile,
     loading: state.loading,
+    error: state.error,
     logout
-  }), [state.user, state.profile, state.loading]);
+  }), [state.user, state.profile, state.loading, state.error]);
 
   return (
     <AuthContext.Provider value={contextValue}>

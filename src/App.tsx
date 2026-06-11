@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ServiceWorkerUpdateBanner } from './components/ServiceWorkerUpdateBanner';
@@ -22,7 +23,8 @@ import { Usuarios } from './pages/Usuarios';
 import { Turmas } from './pages/Turmas';
 
 function AppRoutes() {
-  const { user, profile, loading, logout } = useAuth();
+  const { user, profile, loading, error, logout } = useAuth();
+  const [dismissError, setDismissError] = useState(false);
 
   if (loading) {
     return (
@@ -36,9 +38,15 @@ function AppRoutes() {
   if (user && (!profile || profile.status === 'inativo')) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl p-8 text-center shadow-2xl">
+        <div className="max-w-md w-full bg-white rounded-2xl p-8 text-center shadow-2xl relative">
+          {error && !dismissError && (
+            <div className="mb-4 p-3 bg-amber-50 text-amber-800 border border-amber-200 text-xs rounded-xl flex items-center justify-between text-left">
+              <span>{error}</span>
+              <button onClick={() => setDismissError(true)} className="text-amber-500 font-bold ml-2 transition-colors hover:text-amber-700">X</button>
+            </div>
+          )}
           <h2 className="text-2xl font-bold text-slate-800 mb-4">Acesso Não Autorizado</h2>
-          <p className="text-slate-600 mb-6">
+          <p className="text-slate-600 mb-6 font-medium text-sm leading-relaxed">
             {!profile 
               ? `Seu usuário (${user.email}) não possui um perfil configurado no sistema.` 
               : `A conta associada ao e-mail (${user.email}) está atualmente inativa.`}
@@ -47,7 +55,7 @@ function AppRoutes() {
           </p>
           <button 
             onClick={() => logout()}
-            className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+            className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-800 transition-colors cursor-pointer"
           >
             Sair da Conta
           </button>
@@ -57,7 +65,22 @@ function AppRoutes() {
   }
 
   return (
-    <Routes>
+    <>
+      {error && !dismissError && (
+        <div className="bg-amber-500 text-slate-950 font-extrabold text-xs py-2.5 px-4 flex items-center justify-between gap-4 border-b border-amber-600">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">⚠️</span>
+            <span>{error}</span>
+          </div>
+          <button 
+            onClick={() => setDismissError(true)} 
+            className="bg-slate-900 hover:bg-slate-850 text-white text-[10px] uppercase tracking-wider px-2 py-1 rounded cursor-pointer transition-colors font-black"
+          >
+            Dispensar
+          </button>
+        </div>
+      )}
+      <Routes>
       {/* Só redireciona do login se tiver user E profile */}
       <Route path="/login" element={!(user && profile) ? <Login /> : <Navigate to="/" replace />} />
       
@@ -78,6 +101,7 @@ function AppRoutes() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 
