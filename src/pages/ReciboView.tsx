@@ -9,6 +9,15 @@ export function ReciboView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
+  const formatarDataBR = (dateStr?: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateStr;
+  };
+
   const recibo = mockRecibos.find(r => r.id === id);
 
   if (!recibo) {
@@ -118,6 +127,18 @@ export function ReciboView() {
             <strong className="text-slate-900">Data/Hora:</strong>{' '}
             {new Date(recibo.dataHora).toLocaleString('pt-BR')}
           </p>
+
+          {recibo.data_lancamento && (
+            <p className="font-medium text-slate-600 flex items-center gap-1.5 flex-wrap">
+              <strong className="text-slate-900">Data de Referência:</strong>{' '}
+              <span className="font-semibold text-slate-800">{formatarDataBR(recibo.data_lancamento)}</span>
+              {recibo.lancamento_retroativo && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 border border-amber-200 text-amber-800 text-[8px] font-black uppercase tracking-wider print:border-amber-300">
+                  Lançamento retroativo
+                </span>
+              )}
+            </p>
+          )}
 
           <p className="font-medium text-slate-600">
             <strong className="text-slate-900">Responsável:</strong>{' '}

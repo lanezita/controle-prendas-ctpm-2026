@@ -358,7 +358,21 @@ export function ConsultaRecibos() {
                         )}
                       </td>
                       <td className="px-6 py-4 font-semibold text-slate-800">#{r.numero}</td>
-                      <td className="px-6 py-4 text-slate-600">{new Date(r.dataHora).toLocaleDateString('pt-BR')}</td>
+                      <td className="px-6 py-4 text-slate-600">
+                        <div>
+                          {r.data_lancamento 
+                            ? (() => {
+                                const parts = r.data_lancamento.split('-');
+                                return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : r.data_lancamento;
+                              })()
+                            : new Date(r.dataHora).toLocaleDateString('pt-BR')}
+                        </div>
+                        {r.lancamento_retroativo && (
+                          <span className="inline-block mt-1 text-[9px] font-black uppercase tracking-widest text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                            Retroativo
+                          </span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-slate-800">
                         {nomeAluno}
                         {matriculaAluno && <span className="block text-xs text-slate-500">{matriculaAluno}</span>}

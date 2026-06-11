@@ -50,9 +50,70 @@ export function Usuarios() {
   const [inviteTurno, setInviteTurno] = useState<'manha' | 'tarde' | 'ambos'>('ambos');
   const [inviteStatus, setInviteStatus] = useState<'ativo' | 'inativo'>('ativo');
 
+  // Estados de Configuração de Modo Retroativo
+  const [retroAtivoManha, setRetroAtivoManha] = useState(false);
+  const [retroAtivoTarde, setRetroAtivoTarde] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+
   useEffect(() => {
     carregarUsuarios();
+    carregarConfiguracoes();
   }, []);
+
+  const carregarConfiguracoes = async () => {
+    setLoadingConfig(true);
+    try {
+      const { data, error } = await supabase
+        .from('configuracoes_sistema')
+        .select('*');
+
+      if (!error && data && data.length > 0) {
+        const manha = data.find(c => c.chave === 'retroativo_manha_habilitado');
+        const tarde = data.find(c => c.chave === 'retroativo_tarde_habilitado');
+        setRetroAtivoManha(manha?.valor === 'true');
+        setRetroAtivoTarde(tarde?.valor === 'true');
+      } else {
+        const manhaLocal = localStorage.getItem('retroativo_manha_habilitado') === 'true';
+        const tardeLocal = localStorage.getItem('retroativo_tarde_habilitado') === 'true';
+        setRetroAtivoManha(manhaLocal);
+        setRetroAtivoTarde(tardeLocal);
+      }
+    } catch (err) {
+      console.error('Erro ao ler configuracoes do Supabase:', err);
+      const manhaLocal = localStorage.getItem('retroativo_manha_habilitado') === 'true';
+      const tardeLocal = localStorage.getItem('retroativo_tarde_habilitado') === 'true';
+      setRetroAtivoManha(manhaLocal);
+      setRetroAtivoTarde(tardeLocal);
+    } finally {
+      setLoadingConfig(false);
+    }
+  };
+
+  const salvarConfiguracao = async (chave: 'retroativo_manha_habilitado' | 'retroativo_tarde_habilitado', novoValor: boolean) => {
+    if (chave === 'retroativo_manha_habilitado') {
+      setRetroAtivoManha(novoValor);
+    } else {
+      setRetroAtivoTarde(novoValor);
+    }
+
+    localStorage.setItem(chave, novoValor ? 'true' : 'false');
+
+    try {
+      const { error } = await supabase
+        .from('configuracoes_sistema')
+        .upsert({ chave, valor: novoValor ? 'true' : 'false', updated_at: new Date().toISOString() });
+
+      if (error) {
+        console.warn('Erro ao salvar no Supabase (tentando insert/update):', error);
+        await supabase
+          .from('configuracoes_sistema')
+          .update({ valor: novoValor ? 'true' : 'false', updated_at: new Date().toISOString() })
+          .eq('chave', chave);
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar configuracoes:', err);
+    }
+  };
 
   const carregarUsuarios = async () => {
     setLoading(true);
@@ -331,6 +392,60 @@ export function Usuarios() {
           <span>{successMsg}</span>
         </div>
       )}
+
+      {/* Painel de Configuração de Lançamento Retroativo por Turno */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <h2 className="font-extrabold text-slate-900 text-sm uppercase tracking-widest flex items-center gap-2">
+          <Clock className="w-4.5 h-4.5 text-indigo-600" />
+          Configuração de Lançamento Retroativo por Turno
+        </h2>
+        <p className="text-xs text-slate-500">
+          Como administrador, você pode autorizar operadores dos respectivos turnos a escolherem a data de entrega retroativa no momento de um lançamento de prendas.
+        </p>
+        
+        {loadingConfig ? (
+          <div className="flex items-center gap-2 py-2 text-xs text-slate-400 font-medium">
+            <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+            <span>Carregando configurações do sistema...</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            {/* Turno Manhã */}
+            <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100/50 transition-colors">
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">Turno da Manhã</span>
+                <p className="text-[11px] text-slate-400">Permitir escolha de data retroativa</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={retroAtivoManha}
+                  onChange={(e) => salvarConfiguracao('retroativo_manha_habilitado', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            {/* Turno Tarde */}
+            <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100/50 transition-colors">
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">Turno da Tarde</span>
+                <p className="text-[11px] text-slate-400">Permitir escolha de data retroativa</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={retroAtivoTarde}
+                  onChange={(e) => salvarConfiguracao('retroativo_tarde_habilitado', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Painel de Filtros e Busca */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">

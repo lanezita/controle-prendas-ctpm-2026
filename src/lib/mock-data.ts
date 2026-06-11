@@ -95,6 +95,10 @@ export interface Recibo {
   itens: ReciboItem[]; // Embedded for mock simplicity
   observacao?: string;
   
+  // Retroativo
+  data_lancamento?: string;
+  lancamento_retroativo?: boolean;
+
   // Snapshots
   aluno_nome?: string;
   aluno_matricula?: string;
@@ -169,7 +173,7 @@ const mockPrendasDefault: Prenda[] = [
   { id: 'p12', codigo_prenda: 'ED001', nome: 'Lousinha de madeira ou lousinha mágica', nome_prenda: 'Lousinha de madeira ou lousinha mágica', categoria: 'Educativos', variacao: 'Diversas', pontuacaoBase: 150, pontuacao_base: 150, permite_relampago: true, observacao: '', status: 'ativo' },
 ];
 
-export function getLocalDataFmt(): string {
+export function getLocalDataFmt(d: Date = new Date()): string {
   try {
     const formatter = new Intl.DateTimeFormat('fr-CA', {
       timeZone: 'America/Sao_Paulo',
@@ -177,9 +181,8 @@ export function getLocalDataFmt(): string {
       month: '2-digit',
       day: '2-digit'
     });
-    return formatter.format(new Date());
+    return formatter.format(d);
   } catch (e) {
-    const d = new Date();
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
@@ -187,7 +190,7 @@ export function getLocalDataFmt(): string {
   }
 }
 
-export function getStatusCampanha(campanha: any): 'inativa' | 'agendada' | 'ativa' | 'expirada' {
+export function getStatusCampanha(campanha: any, dataReferencia?: string | Date): 'inativa' | 'agendada' | 'ativa' | 'expirada' {
   if (!campanha) return 'inativa';
   
   const status = (campanha.status || '').toLowerCase();
@@ -195,28 +198,47 @@ export function getStatusCampanha(campanha: any): 'inativa' | 'agendada' | 'ativ
     return 'inativa';
   }
 
-  const data_inicio = campanha.data_inicio || campanha.dataInicial;
-  const data_fim = campanha.data_fim || campanha.dataFinal;
+  const cleanDateStr = (val: any) => {
+    if (!val) return '';
+    if (typeof val === 'string') {
+      return val.substring(0, 10);
+    }
+    return '';
+  };
+
+  const data_inicio = cleanDateStr(campanha.data_inicio || campanha.dataInicial);
+  const data_fim = cleanDateStr(campanha.data_fim || campanha.dataFinal);
   
   if (!data_inicio || !data_fim) return 'inativa';
 
-  const hoje = getLocalDataFmt();
+  let refStr: string;
+  if (!dataReferencia) {
+    refStr = getLocalDataFmt();
+  } else if (dataReferencia instanceof Date) {
+    refStr = getLocalDataFmt(dataReferencia);
+  } else {
+    if (dataReferencia.includes('T')) {
+      refStr = dataReferencia.split('T')[0];
+    } else {
+      refStr = dataReferencia;
+    }
+  }
   
-  if (hoje < data_inicio) {
+  if (refStr < data_inicio) {
     return 'agendada';
   }
-  if (hoje >= data_inicio && hoje <= data_fim && status === 'ativa') {
+  if (refStr >= data_inicio && refStr <= data_fim && status === 'ativa') {
     return 'ativa';
   }
-  if (hoje > data_fim) {
+  if (refStr > data_fim) {
     return 'expirada';
   }
   
   return 'inativa';
 }
 
-export function isCampanhaVigente(campanha: any): boolean {
-  return getStatusCampanha(campanha) === 'ativa';
+export function isCampanhaVigente(campanha: any, dataReferencia?: string | Date): boolean {
+  return getStatusCampanha(campanha, dataReferencia) === 'ativa';
 }
 
 const hoje = getLocalDataFmt();
@@ -505,7 +527,7 @@ export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Prom
           };
         });
 
-        const rpcPayload = {
+        const rpcPayload: any = {
           p_aluno_id: recibo.alunoId,
           p_aluno_matricula: recibo.aluno_matricula || '',
           p_aluno_nome: recibo.aluno_nome || '',
@@ -518,6 +540,13 @@ export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Prom
           p_usuario_nome: recibo.usuario_responsavel_nome || 'Operador',
           p_usuario_perfil: recibo.usuario_responsavel_perfil || 'admin'
         };
+
+        if (recibo.data_lancamento) {
+          rpcPayload.p_data_lancamento = recibo.data_lancamento;
+        }
+        if (recibo.lancamento_retroativo !== undefined) {
+          rpcPayload.p_lancamento_retroativo = recibo.lancamento_retroativo;
+        }
 
         console.log('Chamando RPC lancar_recibo_transacional...', rpcPayload);
 

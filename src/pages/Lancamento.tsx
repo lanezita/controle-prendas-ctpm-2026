@@ -59,6 +59,10 @@ export function Lancamento() {
   const [isLimparConfirmacaoOpen, setIsLimparConfirmacaoOpen] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
+  const [retroativoManhaHabilitado, setRetroativoManhaHabilitado] = useState(false);
+  const [retroativoTardeHabilitado, setRetroativoTardeHabilitado] = useState(false);
+  const [dataLancamento, setDataLancamento] = useState(() => getLocalDataFmt());
+
   // Auto-fetch suggestions on typing with 300ms debounce
   useEffect(() => {
     if (!buscaAluno.trim() || buscaAluno.trim().length < 2 || !profile) {
@@ -221,7 +225,70 @@ export function Lancamento() {
     console.log('Perfil logado no lançamento:', profile);
     fetchPrendas();
     fetchCampanhas();
+    fetchConfig_retroativo();
   }, [profile]);
+
+  const fetchConfig_retroativo = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('configuracoes_sistema')
+        .select('*');
+
+      if (!error && data && data.length > 0) {
+        const manha = data.find(c => c.chave === 'retroativo_manha_habilitado');
+        const tarde = data.find(c => c.chave === 'retroativo_tarde_habilitado');
+        setRetroativoManhaHabilitado(manha?.valor === 'true');
+        setRetroativoTardeHabilitado(tarde?.valor === 'true');
+      } else {
+        setRetroativoManhaHabilitado(localStorage.getItem('retroativo_manha_habilitado') === 'true');
+        setRetroativoTardeHabilitado(localStorage.getItem('retroativo_tarde_habilitado') === 'true');
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar configuracoes_sistema no Lançamento:', e);
+      setRetroativoManhaHabilitado(localStorage.getItem('retroativo_manha_habilitado') === 'true');
+      setRetroativoTardeHabilitado(localStorage.getItem('retroativo_tarde_habilitado') === 'true');
+    }
+  };
+
+  const isRetroativoHabilitadoParaTurno = () => {
+    if (!profile) return false;
+    if (profile.perfil === 'manha') {
+      return retroativoManhaHabilitado;
+    }
+    if (profile.perfil === 'tarde') {
+      return retroativoTardeHabilitado;
+    }
+    if (profile.perfil === 'admin') {
+      if (alunoSelecionado) {
+        const t = alunoSelecionado.turno?.toLowerCase();
+        if (t === 'manha' || t === 'manhã') return retroativoManhaHabilitado;
+        if (t === 'tarde') return retroativoTardeHabilitado;
+      }
+      return retroativoManhaHabilitado || retroativoTardeHabilitado;
+    }
+    return false;
+  };
+
+  // Recalcula multiplicadores e subtotais se a data de lançamento mudar
+  useEffect(() => {
+    if (itens.length === 0 || !alunoSelecionado) return;
+    const novosItens = itens.map(item => {
+      if (item.prendaId === 'avulsa') return item;
+      const prenda = prendas.find(p => p.id === item.prendaId);
+      if (!prenda) return item;
+      const campanha = getCampanhaAtiva(prenda.id, alunoSelecionado.turno);
+      const multiplicador = campanha ? campanha.multiplicador : 1;
+      const subtotal = item.quantidade * prenda.pontuacao_base * multiplicador;
+      return {
+        ...item,
+        multiplicadorAplicado: multiplicador,
+        subtotal,
+        campanhaAplicada: !!campanha,
+        campanhaRelampagoId: campanha ? campanha.id : undefined
+      };
+    });
+    setItens(novosItens);
+  }, [dataLancamento, prendas, campanhas]);
 
   const fetchPrendas = async () => {
     console.log('Carregando prendas...');
@@ -389,7 +456,7 @@ export function Lancamento() {
   const getCampanhaAtiva = (pId: string, turno: string) => {
     return campanhas.find(c => 
       c.prenda_id === pId && 
-      isCampanhaVigente(c) &&
+      isCampanhaVigente(c, dataLancamento) &&
       (c.turno_aplicacao === 'ambos' || c.turno_aplicacao.toLowerCase() === turno.toLowerCase())
     );
   };
@@ -562,6 +629,9 @@ export function Lancamento() {
         };
       });
 
+      const retroativoAtivo = isRetroativoHabilitadoParaTurno();
+      const lancamento_retroativo = retroativoAtivo && dataLancamento !== getLocalDataFmt();
+
       const payload = {
         dataHora: new Date().toISOString(),
         alunoId: alunoSelecionado.id,
@@ -573,6 +643,10 @@ export function Lancamento() {
         observacao: observacao.trim() || undefined,
         itens: itensComSnapshots,
         
+        // Retroativo
+        data_lancamento: retroativoAtivo ? dataLancamento : getLocalDataFmt(),
+        lancamento_retroativo: lancamento_retroativo,
+
         // Snapshots do aluno
         aluno_nome: alunoSelecionado.nome_completo,
         aluno_matricula: alunoSelecionado.matricula,
@@ -929,6 +1003,37 @@ export function Lancamento() {
                        Turno {alunoSelecionado.turno.toLowerCase() === 'manha' || alunoSelecionado.turno.toLowerCase() === 'manhã' ? 'Manhã' : 'Tarde'}
                      </span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Configuração de Lançamento Retroativo */}
+            {isRetroativoHabilitadoParaTurno() && (
+              <div className="mt-4 p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2.5 shadow-sm animate-in fade-in duration-200">
+                <div className="flex items-center gap-1.5 text-amber-[850] text-[10px] font-black uppercase tracking-wider text-amber-855 text-amber-800">
+                  <span className="text-sm">⚠️</span>
+                  <span>Modo retroativo ativo para este turno</span>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                    Data do lançamento/entrega
+                  </label>
+                  <input
+                    type="date"
+                    max={getLocalDataFmt()}
+                    className="w-full bg-white border border-amber-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:ring-amber-500 focus:border-amber-500 outline-none text-slate-800"
+                    value={dataLancamento}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      if (val <= getLocalDataFmt()) {
+                        setDataLancamento(val);
+                      } else {
+                        setDataLancamento(getLocalDataFmt());
+                      }
+                    }}
+                  />
+                  <p className="text-[9px] text-amber-700 italic mt-1 font-medium font-sans">Campanhas relâmpago serão calculadas com base nesta data.</p>
                 </div>
               </div>
             )}
