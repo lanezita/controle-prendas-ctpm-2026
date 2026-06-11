@@ -393,8 +393,9 @@ export function generateNextReceiptNumber(): string {
   const recibos = getStoredRecibos();
   let maxSeq = 0;
   recibos.forEach(r => {
-    // Matches 2026-XXXX or legacy 2026XXXXX
-    const cleanNumStr = r.numero.replace('2026-', '').replace('2026', '');
+    // Matches 2026-XXXX or legacy 2026XXXXX safely
+    const numStr = String(r.numero ?? r.numero_recibo ?? '');
+    const cleanNumStr = numStr.replace('2026-', '').replace('2026', '');
     const num = parseInt(cleanNumStr, 10);
     if (!isNaN(num) && num > maxSeq) {
       maxSeq = num;
@@ -465,7 +466,7 @@ export function cancelMockRecibo(reciboId: string, canceladoPor: string, motivo:
 }
 
 export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Promise<Recibo> {
-    const isOnline = isSupabaseConfigured && typeof navigator !== 'undefined' && navigator.onLine;
+    const isOnline = isSupabaseConfigured;
 
     if (isOnline) {
       // 1. Verificar se há sessão ativa do Supabase
@@ -495,60 +496,44 @@ export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Prom
           return {
             prenda_id: validPrendaId,
             nome_prenda: item.nome_prenda || 'Prenda Avulsa',
-            tipo_prenda: item.prendaId === 'avulsa' || !validPrendaId ? 'avulsa' : 'regular',
-            quantidade: item.quantidade,
-            
-            // Compatibilidade dupla de nomes de colunas
-            pontuacao_base: item.pontuacaoBase,
-            pontos_base: item.pontuacaoBase,
-            
-            multiplicador_aplicado: item.multiplicadorAplicado,
-            multiplicador: item.multiplicadorAplicado,
-            
-            subtotal_pontos: item.subtotal,
-            total_pontos: item.subtotal,
-            
+            quantidade: Number(item.quantidade),
+            pontuacao_base: Number(item.pontuacaoBase),
+            multiplicador_aplicado: Number(item.multiplicadorAplicado),
+            subtotal_pontos: Number(item.subtotal),
             campanha_relampago_id: validCampanhaId,
-            eh_relampago: isRelampago,
-            prenda_relampago: isRelampago ? 'sim' : 'não'
+            eh_relampago: isRelampago
           };
         });
 
-        const payload = {
+        const rpcPayload = {
           p_aluno_id: recibo.alunoId,
           p_aluno_matricula: recibo.aluno_matricula || '',
           p_aluno_nome: recibo.aluno_nome || '',
           p_aluno_turma: recibo.aluno_turma || '',
+          p_itens: itensEnvio,
+          p_observacao: recibo.observacao || '',
+          p_total_pontos: Number(recibo.total_pontos),
           p_turno_aluno: recibo.turno,
-          p_total_pontos: recibo.total_pontos,
           p_usuario_id: recibo.usuarioId,
           p_usuario_nome: recibo.usuario_responsavel_nome || 'Operador',
-          p_usuario_perfil: recibo.usuario_responsavel_perfil || 'admin',
-          p_observacao: recibo.observacao || '',
-          p_itens: itensEnvio
+          p_usuario_perfil: recibo.usuario_responsavel_perfil || 'admin'
         };
 
-        console.log('Aluno selecionado:', {
-          id: recibo.alunoId,
-          nome_completo: recibo.aluno_nome,
-          matricula: recibo.aluno_matricula,
-          codigo_turma: recibo.aluno_turma,
-          turno: recibo.turno
-        });
-        console.log('Itens do recibo:', recibo.itens);
-        console.log('Payload RPC:', payload);
+        console.log('Chamando RPC lancar_recibo_transacional...', rpcPayload);
 
         // Chamamos a RPC que processará a inserção de forma transacional e atômica
-        const { data, error } = await supabase.rpc('lancar_recibo_transacional', payload);
+        const { data, error } = await supabase.rpc('lancar_recibo_transacional', rpcPayload);
+
+        console.log('Resposta RPC lancar_recibo_transacional:', data, error);
 
         if (error) {
           console.error('Supabase transactional write failed completely:', error);
           throw new Error(error.message || JSON.stringify(error));
         }
 
-        if (data && (data.numero_recibo || data.id)) {
-          const nextNum = data.numero_recibo;
-          const officialId = data.id || `r_${Date.now()}`;
+        if (data && (data.id || data.recibo_id || data.numero_recibo)) {
+          const officialId = data.id || data.recibo_id || `r_${Date.now()}`;
+          const nextNum = data.numero_recibo || '';
           
           const newRecibo: Recibo = {
             ...recibo,
