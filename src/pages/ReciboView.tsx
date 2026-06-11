@@ -170,20 +170,34 @@ export function ReciboView() {
             {recibo.itens.map((item, idx) => {
               const prenda = mockPrendas.find(p => p.id === item.prendaId);
               const nomePrendaExibicao =
-                item.nome_prenda || prenda?.nome || 'Item desconhecido';
-              const variacaoExibicao = item.variacao || prenda?.variacao;
+                item.nome_prenda || prenda?.nome_prenda || prenda?.nome || 'Item desconhecido';
+              
+              let variacaoExibicao = item.variacao || prenda?.variacao;
+              if (variacaoExibicao && variacaoExibicao.trim().toLowerCase() === 'regular') {
+                variacaoExibicao = undefined;
+              }
+
+              const multVal = Number(item.multiplicadorAplicado || (item as any).multiplicador || 1);
+              const isRelampago =
+                item.campanhaAplicada === true ||
+                item.campanha_relampago_aplicada === 'sim' ||
+                (item as any).eh_relampago === true ||
+                (item as any).eh_relampago === 'sim' ||
+                multVal > 1;
 
               return (
                 <tr key={idx} className="text-slate-700">
                   <td className="py-3 print:py-1">
-                    <div className="flex items-center font-semibold">
+                    <div className="flex items-center flex-wrap gap-1.5 font-semibold">
                       <span>
                         {nomePrendaExibicao}
                         {variacaoExibicao ? ` — ${variacaoExibicao}` : ''}
                       </span>
 
-                      {item.campanhaAplicada && (
-                        <Zap className="h-3.5 w-3.5 text-amber-500 ml-1.5 shrink-0 print:h-2.5 print:w-2.5 print:ml-1" />
+                      {isRelampago && (
+                        <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black uppercase tracking-wider border border-amber-200 shrink-0 print:border-amber-400 print:text-amber-950">
+                          ⚡ RELÂMPAGO {multVal}x
+                        </span>
                       )}
                     </div>
                   </td>
