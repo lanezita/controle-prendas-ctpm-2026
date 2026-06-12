@@ -590,7 +590,26 @@ export function Dashboard() {
                         {formatPoints(rec.total_pontos)} pts
                       </span>
                       <p className="text-[9px] text-slate-400 font-semibold mt-0.5 leading-none">
-                        {new Date(rec.dataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        {(() => {
+                          const dataBase = rec.data_lancamento || rec.criado_em || rec.dataHora;
+                          if (!dataBase) return '';
+                          if (/^\d{4}-\d{2}-\d{2}$/.test(dataBase)) {
+                            const parts = dataBase.split('-');
+                            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                          }
+                          try {
+                            const d = new Date(dataBase);
+                            if (isNaN(d.getTime())) return dataBase;
+                            // check if there is a time component
+                            if (dataBase.includes('T') || dataBase.includes(':')) {
+                              return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            } else {
+                              return d.toLocaleDateString('pt-BR');
+                            }
+                          } catch {
+                            return dataBase;
+                          }
+                        })()}
                       </p>
                     </div>
                   </li>

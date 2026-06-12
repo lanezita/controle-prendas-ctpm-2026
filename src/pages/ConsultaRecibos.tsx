@@ -360,12 +360,21 @@ export function ConsultaRecibos() {
                       <td className="px-6 py-4 font-semibold text-slate-800">#{r.numero}</td>
                       <td className="px-6 py-4 text-slate-600">
                         <div>
-                          {r.data_lancamento 
-                            ? (() => {
-                                const parts = r.data_lancamento.split('-');
-                                return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : r.data_lancamento;
-                              })()
-                            : new Date(r.dataHora).toLocaleDateString('pt-BR')}
+                          {(() => {
+                            const dataBase = r.data_lancamento || r.criado_em || r.dataHora;
+                            if (!dataBase) return '';
+                            if (/^\d{4}-\d{2}-\d{2}$/.test(dataBase)) {
+                              const parts = dataBase.split('-');
+                              return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                            }
+                            try {
+                              const d = new Date(dataBase);
+                              if (isNaN(d.getTime())) return dataBase;
+                              return d.toLocaleDateString('pt-BR');
+                            } catch {
+                              return dataBase;
+                            }
+                          })()}
                         </div>
                         {r.lancamento_retroativo && (
                           <span className="inline-block mt-1 text-[9px] font-black uppercase tracking-widest text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">

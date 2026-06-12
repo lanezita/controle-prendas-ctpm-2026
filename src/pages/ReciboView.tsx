@@ -1,5 +1,6 @@
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { mockRecibos, mockAlunos, mockTurmas, mockPrendas } from '../lib/mock-data';
+import { mockRecibos, mockAlunos, mockTurmas, mockPrendas, fetchRecibosFromDB } from '../lib/mock-data';
 import { formatPoints } from '../lib/utils';
 import { Printer, ArrowLeft, Zap } from 'lucide-react';
 import { Logo } from '../components/Logo';
@@ -8,6 +9,26 @@ import { SYSTEM_NAME, SCHOOL_NAME } from '../constants';
 export function ReciboView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
+  const [recibo, setRecibo] = useState(() => mockRecibos.find(r => r.id === id));
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function carregarRecibo() {
+      try {
+        const dRecibos = await fetchRecibosFromDB();
+        const found = dRecibos.find(r => r.id === id);
+        if (found) {
+          setRecibo(found);
+        }
+      } catch (err) {
+        console.error('Erro ao recarregar recibos na view:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    carregarRecibo();
+  }, [id]);
 
   const formatarDataBR = (dateStr?: string) => {
     if (!dateStr) return '';
@@ -18,7 +39,35 @@ export function ReciboView() {
     return dateStr;
   };
 
-  const recibo = mockRecibos.find(r => r.id === id);
+  const formatarDataExibicao = (val?: string) => {
+    if (!val) return '';
+    // Formato YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+      const parts = val.split('-');
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    // Formato ISO ou similar
+    try {
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return val;
+      if (val.includes('T') || val.includes(':')) {
+        return d.toLocaleString('pt-BR');
+      } else {
+        return d.toLocaleDateString('pt-BR');
+      }
+    } catch {
+      return val;
+    }
+  };
+
+  if (loading && !recibo) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-slate-500 font-bold uppercase tracking-wide">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
+        Carregando recibo...
+      </div>
+    );
+  }
 
   if (!recibo) {
     return (
@@ -124,20 +173,23 @@ export function ReciboView() {
           </p>
 
           <p className="font-medium text-slate-600">
-            <strong className="text-slate-900">Data/Hora:</strong>{' '}
-            {new Date(recibo.dataHora).toLocaleString('pt-BR')}
+            <strong className="text-slate-900">Data da Entrega:</strong>{' '}
+            {formatarDataExibicao(recibo.data_lancamento || recibo.criado_em || recibo.dataHora)}
           </p>
 
-          {recibo.data_lancamento && (
-            <p className="font-medium text-slate-600 flex items-center gap-1.5 flex-wrap">
-              <strong className="text-slate-900">Data de Referência:</strong>{' '}
-              <span className="font-semibold text-slate-800">{formatarDataBR(recibo.data_lancamento)}</span>
-              {recibo.lancamento_retroativo && (
+          {recibo.lancamento_retroativo && (
+            <div className="space-y-0.5 my-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 border border-amber-200 text-amber-800 text-[8px] font-black uppercase tracking-wider print:border-amber-300">
-                  Lançamento retroativo
+                  ⚡ Lançamento retroativo
                 </span>
+              </div>
+              {recibo.criado_em && (
+                <p className="text-[10px] text-slate-400 italic print:hidden">
+                  Registrado no sistema em: {formatarDataExibicao(recibo.criado_em)}
+                </p>
               )}
-            </p>
+            </div>
           )}
 
           <p className="font-medium text-slate-600">
