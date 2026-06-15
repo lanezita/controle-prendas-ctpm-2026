@@ -361,7 +361,7 @@ export function ReciboView() {
         </button>
       </div>
 
-      <div className="print:block w-full max-w-full">
+      <div id="print-area" className="print-area print:block w-full max-w-full">
         <ViaRecibo title="Via 1 - Escola" />
         <div className="border-t-2 border-dashed border-slate-300 my-8 print:my-4 print:border-slate-800"></div>
         <ViaRecibo title="Via 2 - Responsável/Entregador" />

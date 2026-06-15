@@ -53,7 +53,7 @@ export function Ranking() {
     if (action === 'VIEW') {
       setIsPreviewOpen(true);
     } else {
-      setIsPreviewOpen(false);
+      setIsPreviewOpen(true);
       setTimeout(() => {
         window.print();
       }, 300);
@@ -137,8 +137,8 @@ export function Ranking() {
 
       {/* Área de Visualização/Impressão do Ranking */}
       {isPreviewOpen && (
-        <div className="bg-white p-4 sm:p-8 text-black shadow-2xl rounded-2xl sm:rounded-[2rem] border-2 sm:border-4 border-indigo-500 mb-8 animate-in fade-in slide-in-from-top-4 duration-500 no-print w-full max-w-full overflow-hidden box-border">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-4 border-b border-slate-100">
+        <div className="bg-white p-4 sm:p-8 text-black shadow-2xl rounded-2xl sm:rounded-[2rem] border-2 sm:border-4 border-indigo-500 mb-8 animate-in fade-in slide-in-from-top-4 duration-500 w-full max-w-full overflow-hidden box-border">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-4 border-b border-slate-100 no-print">
             <div className="flex items-center gap-2 text-indigo-600">
               <Eye className="w-6 h-6 shrink-0" />
               <span className="font-black text-xs sm:text-sm uppercase tracking-widest">Modo de Visualização (Ranking)</span>
@@ -146,7 +146,7 @@ export function Ranking() {
             <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
               <button
                 onClick={() => setIsPreviewOpen(false)}
-                className="px-3 py-2 font-black text-[9px] sm:text-[10px] text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
+                className="px-3 py-2 font-black text-[9px] sm:text-[10px] text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors cursor-pointer"
               >
                 Sair
               </button>
@@ -160,7 +160,7 @@ export function Ranking() {
             </div>
           </div>
           
-          <div className="w-full max-w-full sm:max-w-4xl mx-auto border border-slate-100 p-4 sm:p-8 shadow-sm overflow-x-auto box-border">
+          <div id="print-area" className="print-area w-full max-w-full sm:max-w-4xl mx-auto border border-slate-100 p-4 sm:p-8 shadow-sm overflow-x-auto box-border bg-white text-slate-900">
             <header className="flex flex-col items-center mb-10 border-b-2 border-slate-900 pb-6 text-center">
               <Logo fallbackSize="lg" className="h-16 w-auto mb-4" />
               <h1 className="text-xl font-black uppercase tracking-tight">{SCHOOL_NAME}</h1>
@@ -178,7 +178,7 @@ export function Ranking() {
               {selectedPrintItems.includes('destaques') && rankingTurmas.length > 0 && (
                 <section>
                   <h4 className="text-[10px] font-black uppercase tracking-widest mb-6 border-l-4 border-slate-900 pl-2">Pódio de Turmas</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 print:grid-cols-3 gap-4 sm:gap-6 print:gap-4">
                     {rankingTurmas.slice(0, 3).map((t, i) => (
                       <div key={t.codigo_turma} className={`border-2 p-4 sm:p-6 rounded-2xl flex flex-col items-center justify-center ${i === 0 ? 'border-yellow-400 bg-yellow-50' : 'border-slate-200'}`}>
                         <span className="text-3xl mb-2">{i === 0 ? '🥇' : (i === 1 ? '🥈' : '🥉')}</span>
@@ -268,7 +268,7 @@ export function Ranking() {
       )}
 
       {/* View de Impressão Real do Ranking (Hidden on screen) */}
-      <div className="hidden print:block text-black bg-white">
+      <div className="hidden">
           <div className="flex flex-col items-center mb-8 border-b-2 border-black pb-4 text-center">
             <Logo fallbackSize="md" className="h-18 w-auto mb-2" />
             <h1 className="text-md font-black uppercase">{SCHOOL_NAME}</h1>
