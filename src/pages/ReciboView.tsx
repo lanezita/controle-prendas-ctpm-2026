@@ -355,7 +355,8 @@ export function ReciboView() {
 
         <button
           onClick={() => window.print()}
-          className="w-full sm:w-auto flex items-center justify-center bg-indigo-600 text-white py-3.5 px-6 rounded-xl text-xs uppercase font-black tracking-widest hover:bg-slate-900 transition-all shadow-xl shadow-indigo-100 active:scale-95 cursor-pointer"
+          disabled={loading}
+          className="w-full sm:w-auto flex items-center justify-center bg-indigo-600 text-white py-3.5 px-6 rounded-xl text-xs uppercase font-black tracking-widest hover:bg-slate-900 transition-all shadow-xl shadow-indigo-100 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Printer className="h-4 w-4 mr-2" /> Imprimir Recibo
         </button>
