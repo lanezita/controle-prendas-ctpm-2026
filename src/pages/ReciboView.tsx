@@ -5,6 +5,7 @@ import { formatPoints } from '../lib/utils';
 import { Printer, ArrowLeft, Zap } from 'lucide-react';
 import { Logo } from '../components/Logo';
 import { SYSTEM_NAME, SCHOOL_NAME } from '../constants';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export function ReciboView() {
   const { id } = useParams<{ id: string }>();
@@ -12,22 +13,32 @@ export function ReciboView() {
 
   const [recibo, setRecibo] = useState(() => mockRecibos.find(r => r.id === id));
   const [loading, setLoading] = useState(true);
+  const [dbPrendas, setDbPrendas] = useState<any[]>([]);
 
   useEffect(() => {
-    async function carregarRecibo() {
+    async function carregarDados() {
       try {
+        if (isSupabaseConfigured) {
+          const { data, error } = await supabase
+            .from('prendas')
+            .select('*');
+          if (!error && data) {
+            setDbPrendas(data);
+          }
+        }
+
         const dRecibos = await fetchRecibosFromDB();
         const found = dRecibos.find(r => r.id === id);
         if (found) {
           setRecibo(found);
         }
       } catch (err) {
-        console.error('Erro ao recarregar recibos na view:', err);
+        console.error('Erro ao recarregar dados na view:', err);
       } finally {
         setLoading(false);
       }
     }
-    carregarRecibo();
+    carregarDados();
   }, [id]);
 
   const formatarDataBR = (dateStr?: string) => {
@@ -241,14 +252,37 @@ export function ReciboView() {
 
           <tbody className="divide-y divide-slate-200">
             {recibo.itens.map((item, idx) => {
-              const prenda = mockPrendas.find(p => p.id === item.prendaId);
+              const prendaId = item.prendaId || (item as any).prenda_id;
+              const dbPrenda = dbPrendas.find(p => p.id === prendaId);
+              const mockPrenda = mockPrendas.find(p => p.id === prendaId);
+              const prenda = dbPrenda || mockPrenda;
+
               const nomePrendaExibicao =
                 item.nome_prenda || prenda?.nome_prenda || prenda?.nome || 'Item desconhecido';
               
-              let variacaoExibicao = item.variacao || prenda?.variacao;
-              if (variacaoExibicao && variacaoExibicao.trim().toLowerCase() === 'regular') {
+              let variacaoExibicao = prenda?.variacao || item.variacao;
+              if (
+                !variacaoExibicao || 
+                variacaoExibicao.trim().toLowerCase() === 'regular' || 
+                variacaoExibicao.trim() === '' ||
+                variacaoExibicao.trim().toLowerCase() === 'null' ||
+                variacaoExibicao.trim().toLowerCase() === 'undefined'
+              ) {
                 variacaoExibicao = undefined;
               }
+
+              // Prevenir duplicação da variação no nome da prenda
+              if (variacaoExibicao && nomePrendaExibicao) {
+                const normalizedNome = nomePrendaExibicao.toLowerCase().trim();
+                const normalizedVar = variacaoExibicao.toLowerCase().trim();
+                if (normalizedNome.includes(normalizedVar)) {
+                  variacaoExibicao = undefined;
+                }
+              }
+
+              const descCompleta = variacaoExibicao
+                ? `${nomePrendaExibicao} — ${variacaoExibicao}`
+                : nomePrendaExibicao;
 
               const multVal = Number(item.multiplicadorAplicado || (item as any).multiplicador || 1);
               const isRelampago =
@@ -263,8 +297,7 @@ export function ReciboView() {
                   <td className="py-3 print:py-1">
                     <div className="flex items-center flex-wrap gap-1.5 font-semibold">
                       <span>
-                        {nomePrendaExibicao}
-                        {variacaoExibicao ? ` — ${variacaoExibicao}` : ''}
+                        {descCompleta}
                       </span>
 
                       {isRelampago && (
