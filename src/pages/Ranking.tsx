@@ -6,7 +6,7 @@ import { getRankingAlunos, getRankingTurmas, getRankingTurnos, fetchRecibosFromD
 import { Trophy, Medal, Award, Users, Sun, Moon, Globe, Loader2, Printer, Eye } from 'lucide-react';
 import { PrintSelectionModal } from '../components/PrintSelectionModal';
 import { Logo } from '../components/Logo';
-import { SCHOOL_NAME, SYSTEM_NAME } from '../constants';
+import { SCHOOL_NAME, SYSTEM_NAME, HOMOLOGACAO_LABEL } from '../constants';
 
 
 interface RankingAluno {
@@ -255,7 +255,7 @@ export function Ranking() {
             <footer className="mt-20 pt-10 border-t-2 border-slate-900 flex flex-col sm:flex-row justify-between items-center sm:items-end gap-6 sm:gap-4 text-center sm:text-left">
                <div className="flex flex-col items-center sm:items-start gap-2">
                   <div className="w-56 h-0.5 bg-slate-900"></div>
-                  <p className="text-[10px] font-black uppercase">Homologado pelo Coordenador</p>
+                  <p className="text-[10px] font-black uppercase">{HOMOLOGACAO_LABEL}</p>
                   <p className="text-[9px] text-slate-500 font-medium">Extraído em: {today} às {new Date().toLocaleTimeString('pt-BR')}</p>
                </div>
                <div className="text-center sm:text-right">
