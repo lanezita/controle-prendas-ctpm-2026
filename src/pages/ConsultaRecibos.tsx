@@ -83,14 +83,14 @@ export function ConsultaRecibos() {
     setModalCancelamentoOpen(true);
   };
 
-  const confirmarCancelamento = () => {
+  const confirmarCancelamento = async () => {
     if (!motivoCancelamento.trim()) {
       setErroCancelamento('O motivo do cancelamento é obrigatório.');
       return;
     }
     if (reciboParaCancelar && profile) {
       const canceladoPor = `${profile.nome} (Administrador)`;
-      cancelMockRecibo(reciboParaCancelar.id, canceladoPor, motivoCancelamento.trim());
+      await cancelMockRecibo(reciboParaCancelar.id, canceladoPor, motivoCancelamento.trim());
       setRecibosList([...mockRecibos]);
       setModalCancelamentoOpen(false);
       setReciboParaCancelar(null);

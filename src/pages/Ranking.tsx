@@ -77,10 +77,31 @@ export function Ranking() {
 
     try {
       // Fetch latest receipts from DB
-      await fetchRecibosFromDB();
+      const dbRecibos = await fetchRecibosFromDB() || [];
 
       const isFreeQuery = profile.perfil === 'admin' || (profile.perfil === 'consulta' && profile.turno === 'ambos');
       const queryTurno = isFreeQuery ? turnoVisivel : profile.turno;
+
+      // Filter by turno matching queryTurno (normalized)
+      const baseRecibos = dbRecibos.filter(r => {
+        if (!queryTurno || queryTurno === 'geral' || queryTurno === 'todos') return true;
+        const rTurno = (r.aluno_turno || r.turno || '').toLowerCase().trim();
+        const qTurno = queryTurno.toLowerCase().trim();
+        return rTurno === qTurno;
+      });
+
+      const activeRecibos = baseRecibos.filter(r => r.status === 'ativo');
+      const canceledRecibos = baseRecibos.filter(r => r.status === 'cancelado');
+      const activePoints = activeRecibos.reduce((acc, r) => acc + (Number(r.total_pontos) || 0), 0);
+      const canceledPoints = canceledRecibos.reduce((acc, r) => acc + (Number(r.total_pontos) || 0), 0);
+
+      console.log('--- Auditoria de Recibos Ranking ---');
+      console.log(`Filtro Turno: ${queryTurno}`);
+      console.log(`Quantidade de recibos ativos: ${activeRecibos.length}`);
+      console.log(`Quantidade de recibos cancelados: ${canceledRecibos.length}`);
+      console.log(`Pontos ativos considerados: ${activePoints}`);
+      console.log(`Pontos descartados por cancelamento: ${canceledPoints}`);
+      console.log('-----------------------------------');
 
       // Local Alunos ranking calculation
       const localAlunos = getRankingAlunos(queryTurno);

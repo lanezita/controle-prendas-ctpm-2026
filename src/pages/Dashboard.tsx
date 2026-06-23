@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { mockPrendas, isCampanhaVigente, getLocalDataFmt, fetchRecibosFromDB } from '../lib/mock-data'; // Usando apenas para nomes de prendas enquanto os ativos não são carregados na dashboard
 import { formatPoints, cn } from '../lib/utils';
 import { Trophy, FileText, Zap, TrendingUp, Clock, Loader2, AlertCircle, Printer, Eye } from 'lucide-react';
@@ -71,18 +71,30 @@ export function Dashboard() {
       return tNorm === filtroTurno;
     });
 
+    const activeRecibos = baseRecibos.filter(r => r.status === 'ativo');
+    const canceledRecibos = baseRecibos.filter(r => r.status === 'cancelado');
+
     // Rule 2: Pontos totais: sum(total_pontos) somente de recibos com status = 'ativo'
-    const total_pontos = baseRecibos
-      .filter(r => r.status === 'ativo')
+    const total_pontos = activeRecibos
+      .reduce((acc, r) => acc + (Number(r.total_pontos) || 0), 0);
+
+    const pontosDescartados = canceledRecibos
       .reduce((acc, r) => acc + (Number(r.total_pontos) || 0), 0);
 
     // Rule 3: Recibos emitidos: count(*) somente de recibos com status = 'ativo'
-    const total_recibos = baseRecibos.filter(r => r.status === 'ativo').length;
+    const total_recibos = activeRecibos.length;
+
+    console.log('--- Auditoria de Recibos Dashboard ---');
+    console.log(`Filtro Turno: ${filtroTurno}`);
+    console.log(`Quantidade de recibos ativos: ${total_recibos}`);
+    console.log(`Quantidade de recibos cancelados: ${canceledRecibos.length}`);
+    console.log(`Pontos ativos considerados: ${total_pontos}`);
+    console.log(`Pontos descartados por cancelamento: ${pontosDescartados}`);
+    console.log('--------------------------------------');
 
     // Rule 7: Líder do turno: agrupar por codigo_turma (aluno_turma)
     const classPoints: Record<string, { pontos: number; turno: string }> = {};
-    baseRecibos
-      .filter(r => r.status === 'ativo')
+    activeRecibos
       .forEach(r => {
         const classCode = r.aluno_turma || r.turmaId;
         if (classCode) {
@@ -145,6 +157,7 @@ export function Dashboard() {
       if (!profile) return;
       // Fetch latest receipts from DB
       const dbRecibos = await fetchRecibosFromDB();
+      console.log('Fonte Dashboard', isSupabaseConfigured ? 'Supabase DB + Cache Offline' : 'Cache Offline Apenas');
       setRecibosList(dbRecibos || []);
     } catch (err: any) {
       console.error('Erro ao carregar stats do Supabase:', err);

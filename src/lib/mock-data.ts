@@ -427,8 +427,10 @@ export function generateNextReceiptNumber(): string {
   return `2026-${String(nextSeq).padStart(4, '0')}`;
 }
 
-export function cancelMockRecibo(reciboId: string, canceladoPor: string, motivo: string) {
+export async function cancelMockRecibo(reciboId: string, canceladoPor: string, motivo: string): Promise<boolean> {
   const canceladoEm = new Date().toISOString();
+
+  console.log('[CANCEL_AUDIT] Iniciando cancelamento para reciboId:', reciboId);
 
   mockRecibos = mockRecibos.map(r => r.id === reciboId ? { 
     ...r, 
@@ -442,49 +444,103 @@ export function cancelMockRecibo(reciboId: string, canceladoPor: string, motivo:
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(mockRecibos));
     } catch (e) {
-      console.error('Failure saving receipts after cancellation', e);
+      console.error('[CANCEL_AUDIT] Erro ao salvar recibos no localStorage:', e);
     }
   }
 
   // Also cancel lancamentos associated with this receipt
   const receipt = mockRecibos.find(r => r.id === reciboId);
   if (receipt) {
-    const updatedLancamentos = mockLancamentos.map(l => 
-      l.numero_recibo === receipt.numero ? { 
-        ...l, 
-        status: 'cancelado' as const, 
-        cancelado_por: canceladoPor,
-        cancelado_em: canceladoEm,
-        motivo_cancelamento: motivo,
-        updated_at: canceladoEm 
-      } : l
-    );
+    const numeroRecibo = receipt.numero ?? receipt.numero_recibo;
+    const turnoRecibo = receipt.turno ?? receipt.aluno_turno;
+    const alunoId = receipt.alunoId;
+
+    console.log('[CANCEL_AUDIT] Recibo encontrado no cache local:', {
+      id: receipt.id,
+      numero: numeroRecibo,
+      turno: turnoRecibo,
+      alunoId: alunoId
+    });
+
+    const updatedLancamentos = mockLancamentos.map(l => {
+      const lNumero = l.numero_recibo;
+      const lAlunoId = l.aluno_id;
+      if (lNumero === numeroRecibo && lAlunoId === alunoId) {
+        return { 
+          ...l, 
+          status: 'cancelado' as const, 
+          cancelado_por: canceladoPor,
+          cancelado_em: canceladoEm,
+          motivo_cancelamento: motivo,
+          updated_at: canceladoEm 
+        };
+      }
+      return l;
+    });
     saveLancamentos(updatedLancamentos);
     
     // Also try Supabase cancel if configured
-    try {
-      supabase.from('lancamentos').update({ 
-        status: 'cancelado', 
-        cancelado_por: canceladoPor,
-        cancelado_em: canceladoEm,
-        motivo_cancelamento: motivo,
-        updated_at: canceladoEm 
-      }).eq('numero_recibo', receipt.numero).then(res => {
-        if (res.error) console.error('Supabase cancel lancamento error:', res.error);
-      });
+    if (isSupabaseConfigured) {
+      try {
+        console.log('[CANCEL_AUDIT] Conectando ao Supabase para persistir cancelamento...');
 
-      supabase.from('recibos').update({ 
-        status: 'cancelado',
-        cancelado_por: canceladoPor,
-        cancelado_em: canceladoEm,
-        motivo_cancelamento: motivo
-      }).eq('numero_recibo', receipt.numero).then(res => {
-        if (res.error) console.error('Supabase cancel recibo error:', res.error);
-      });
-    } catch (e) {
-      console.warn('Supabase not available for cancel:', e);
+        // 1. Atualizar a tabela de lançamentos associada de forma segura
+        console.log('[CANCEL_AUDIT] Executando UPDATE em public.lancamentos para numero_recibo:', numeroRecibo, 'e aluno_id:', alunoId);
+        const resLancamentos = await supabase.from('lancamentos').update({ 
+          status: 'cancelado', 
+          cancelado_por: canceladoPor,
+          cancelado_em: canceladoEm,
+          motivo_cancelamento: motivo,
+          updated_at: canceladoEm 
+        })
+        .eq('numero_recibo', numeroRecibo)
+        .eq('aluno_id', alunoId);
+
+        console.log('[CANCEL_AUDIT] Resultado UPDATE public.lancamentos:', {
+          status: resLancamentos.status,
+          statusText: resLancamentos.statusText,
+          error: resLancamentos.error
+        });
+
+        // 2. Atualizar a tabela de recibos usando o ID primário (UUID) para garantir unicidade absoluta
+        console.log('[CANCEL_AUDIT] Executando UPDATE em public.recibos para id (UUID):', receipt.id);
+        const resRecibos = await supabase.from('recibos').update({ 
+          status: 'cancelado',
+          cancelado_por: canceladoPor,
+          cancelado_em: canceladoEm,
+          motivo_cancelamento: motivo
+        })
+        .eq('id', receipt.id);
+
+        console.log('[CANCEL_AUDIT] Resultado UPDATE public.recibos:', {
+          status: resRecibos.status,
+          statusText: resRecibos.statusText,
+          error: resRecibos.error
+        });
+
+        if (resRecibos.error || resLancamentos.error) {
+          console.error('[CANCEL_AUDIT] Falha ao persistir cancelamento no Supabase:', {
+            reciboError: resRecibos.error,
+            lancamentoError: resLancamentos.error
+          });
+          return false;
+        }
+
+        console.log('[CANCEL_AUDIT] Cancelamento persistido com sucesso no Supabase para o recibo', numeroRecibo);
+        return true;
+      } catch (e) {
+        console.error('[CANCEL_AUDIT] Exceção crítica durante persistência do cancelamento no Supabase:', e);
+        return false;
+      }
+    } else {
+      console.warn('[CANCEL_AUDIT] Supabase não configurado. Alterações aplicadas apenas localmente.');
     }
+  } else {
+    console.error('[CANCEL_AUDIT] Recibo não encontrado no cache para ID:', reciboId);
+    return false;
   }
+
+  return true;
 }
 
 export async function addMockRecibo(recibo: Omit<Recibo, 'id' | 'numero'>): Promise<Recibo> {
@@ -890,7 +946,7 @@ export async function processarAnaliseSolicitacao(
     const responsavelCancelamento = analisadoPorId; // O UUID do admin
     const observacaoTexto = observacaoAnalise ? ` | Obs Analista: ${observacaoAnalise}` : '';
     const motivoCompleto = `${sol.motivo}${observacaoTexto}`;
-    cancelMockRecibo(sol.recibo_id, responsavelCancelamento, motivoCompleto);
+    await cancelMockRecibo(sol.recibo_id, responsavelCancelamento, motivoCompleto);
   }
 
   if (isSupabaseConfigured) {
