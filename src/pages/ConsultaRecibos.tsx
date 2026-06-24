@@ -504,9 +504,9 @@ export function ConsultaRecibos() {
       )}
 
       {/* Listagem Geral de Recibos */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:border-none print:shadow-none print:bg-transparent print:w-full">
-        <div className="overflow-x-auto print:overflow-visible print:w-full">
-          <table className="w-full text-left text-sm whitespace-nowrap print:w-full">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:border-none print:shadow-none print:bg-transparent print:w-full print:block print:overflow-visible">
+        <div className="overflow-x-auto print:overflow-visible print:w-full print:block">
+          <table className="w-full text-left text-sm whitespace-nowrap print:w-full print:table print:overflow-visible">
             <thead className="bg-slate-50 text-slate-700 font-medium border-b border-slate-200">
               <tr>
                 <th className="px-6 py-4 w-12 print:hidden">
@@ -699,19 +699,19 @@ export function ConsultaRecibos() {
 
             {/* Linha de Totalizador no Rodapé da Tabela */}
             {!loading && recibosFiltrados.length > 0 && (
-              <tfoot className="bg-slate-50 font-bold text-slate-800 border-t-2 border-slate-200">
-                <tr>
+              <tfoot className="bg-slate-50 font-bold text-slate-800 border-t-2 border-slate-200 print:table-footer-group print:border-t-2 print:border-black print:bg-transparent print:text-black print:break-inside-avoid print:static">
+                <tr className="print:break-inside-avoid">
                   <td className="px-6 py-4 print:hidden"></td>
-                  <td colSpan={5} className="px-6 py-4 text-left font-black uppercase tracking-wider text-xs text-slate-500">
+                  <td colSpan={5} className="px-6 py-4 text-left font-black uppercase tracking-wider text-xs text-slate-500 print:text-black print:font-bold">
                     {temSelecaoAtiva ? (
-                      <span className="text-indigo-700 font-black">
+                      <span className="text-indigo-700 font-black print:text-black">
                         Soma Selecionada ({selectedActiveRecibos.length} de {selectableRecibos.length} recibos ativos)
                       </span>
                     ) : (
-                      'Soma de Pontuação (Apenas Ativos)'
+                      <span className="print:text-black">Soma de Pontuação (Apenas Ativos)</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-right text-indigo-600 font-black text-base">
+                  <td className="px-6 py-4 text-right text-indigo-600 font-black text-base print:text-black print:font-black">
                     {formatPoints(somaTotalPontos)}
                   </td>
                   <td className="px-6 py-4 print:hidden"></td>
