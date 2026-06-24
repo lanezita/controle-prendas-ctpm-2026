@@ -7,9 +7,10 @@ import { Logo } from '../components/Logo';
 import { SYSTEM_NAME, SCHOOL_NAME } from '../constants';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
-export function ReciboView() {
-  const { id } = useParams<{ id: string }>();
+export function ReciboView({ reciboId, onClose }: { reciboId?: string; onClose?: () => void }) {
+  const { id: paramId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const id = reciboId || paramId;
 
   const [recibo, setRecibo] = useState(() => mockRecibos.find(r => r.id === id));
   const [loading, setLoading] = useState(true);
@@ -380,10 +381,10 @@ export function ReciboView() {
       {/* Botões - escondidos na impressão */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 print:hidden border-b border-slate-200 pb-4">
         <button
-          onClick={() => navigate('/lancamento')}
+          onClick={onClose || (() => navigate('/lancamento'))}
           className="w-full sm:w-auto flex items-center justify-center text-xs uppercase font-black tracking-widest text-slate-600 hover:text-slate-900 bg-slate-150 py-3.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-200 transition-colors cursor-pointer"
         >
-          <ArrowLeft className="h-4 w-4 mr-2" /> Novo Lançamento
+          <ArrowLeft className="h-4 w-4 mr-2" /> {onClose ? 'Fechar' : 'Novo Lançamento'}
         </button>
 
         <button

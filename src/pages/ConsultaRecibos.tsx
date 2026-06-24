@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { ReciboView } from './ReciboView';
 import { 
   mockRecibos, 
   mockAlunos, 
@@ -26,6 +27,21 @@ export function ConsultaRecibos() {
   const [solicitacoesList, setSolicitacoesList] = useState<SolicitacaoCancelamento[]>(mockSolicitacoes);
   const [loading, setLoading] = useState(true);
   const [errorFetch, setErrorFetch] = useState<string | null>(null);
+
+  // Estados para filtros
+  const [filtroTurma, setFiltroTurma] = useState('');
+  const [filtroTurno, setFiltroTurno] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('todos');
+
+  const [tempTurma, setTempTurma] = useState('');
+  const [tempTurno, setTempTurno] = useState('');
+  const [tempStatus, setTempStatus] = useState('todos');
+
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+
+  // Estado para visualização de recibo em modal
+  const [reciboVisualizarId, setReciboVisualizarId] = useState<string | null>(null);
 
   // Carrega as solicitações e recibos do Supabase se disponível ou lê do cache local
   useEffect(() => {
@@ -183,6 +199,45 @@ export function ConsultaRecibos() {
   // Mapeamento do Turno de atuação com tratamento seguro
   const userTurno = getTurnoNormalizado(profile?.turno || (profile?.perfil === 'manha' ? 'manha' : profile?.perfil === 'tarde' ? 'tarde' : null));
 
+  // Handlers para aplicar e limpar os filtros
+  const handleApplyFilters = async (turma: string, turno: string, status: string) => {
+    setIsApplying(true);
+    setFiltroTurma(turma);
+    setFiltroTurno(turno);
+    setFiltroStatus(status);
+    
+    try {
+      const resRecibos = await fetchRecibosFromDB();
+      setRecibosList([...resRecibos]);
+    } catch (err) {
+      console.error('Erro ao atualizar recibos:', err);
+    } finally {
+      setIsApplying(false);
+      setIsFiltersOpen(false);
+    }
+  };
+
+  const handleClearFilters = async () => {
+    setIsApplying(true);
+    setTempTurma('');
+    setTempTurno('');
+    setTempStatus('todos');
+    
+    setFiltroTurma('');
+    setFiltroTurno('');
+    setFiltroStatus('todos');
+    
+    try {
+      const resRecibos = await fetchRecibosFromDB();
+      setRecibosList([...resRecibos]);
+    } catch (err) {
+      console.error('Erro ao limpar filtros e carregar recibos:', err);
+    } finally {
+      setIsApplying(false);
+      setIsFiltersOpen(false);
+    }
+  };
+
   // Filtragem de Recibos de acordo com regras de turno e permissões
   const baseRecibos = profile?.perfil === 'admin' || profile?.perfil === 'consulta'
     ? recibosList 
@@ -192,18 +247,50 @@ export function ConsultaRecibos() {
       });
 
   const recibosFiltrados = baseRecibos.filter(r => {
-    if (!busca) return true;
-    const searchLower = busca.toLowerCase();
-    const aluno = mockAlunos.find(a => a.id === r.alunoId);
-    const nomeAluno = (r.aluno_nome || aluno?.nome || '').toLowerCase();
-    const matriculaAluno = r.aluno_matricula || aluno?.matricula || '';
-    
-    return (
-      String(r.numero ?? r.numero_recibo ?? '').toLowerCase().includes(searchLower) ||
-      nomeAluno.includes(searchLower) ||
-      matriculaAluno.includes(searchLower)
-    );
+    // 1. Filtro de busca por texto
+    if (busca) {
+      const searchLower = busca.toLowerCase();
+      const aluno = mockAlunos.find(a => a.id === r.alunoId);
+      const nomeAluno = (r.aluno_nome || aluno?.nome || '').toLowerCase();
+      const matriculaAluno = r.aluno_matricula || aluno?.matricula || '';
+      
+      const matchBusca = (
+        String(r.numero ?? r.numero_recibo ?? '').toLowerCase().includes(searchLower) ||
+        nomeAluno.includes(searchLower) ||
+        matriculaAluno.includes(searchLower)
+      );
+      if (!matchBusca) return false;
+    }
+
+    // 2. Filtro de Turma
+    if (filtroTurma) {
+      const turma = mockTurmas.find(t => t.id === r.turmaId);
+      const turmaNome = r.aluno_turma || turma?.nome || r.turmaId || '';
+      const matchTurma = (
+        r.turmaId === filtroTurma || 
+        turmaNome.toLowerCase() === filtroTurma.toLowerCase()
+      );
+      if (!matchTurma) return false;
+    }
+
+    // 3. Filtro de Turno (SÓ renderizado/aplicado para admin/consulta)
+    if ((profile?.perfil === 'admin' || profile?.perfil === 'consulta') && filtroTurno) {
+      const rTurno = getTurnoNormalizado(r.aluno_turno || r.turno);
+      if (rTurno !== filtroTurno) return false;
+    }
+
+    // 4. Filtro de Status
+    if (filtroStatus && filtroStatus !== 'todos') {
+      if (r.status.toLowerCase() !== filtroStatus.toLowerCase()) return false;
+    }
+
+    return true;
   });
+
+  // Somatório dinâmico considerando apenas recibos com status === 'ativo'
+  const somaTotalPontos = recibosFiltrados
+    .filter(r => r.status.toLowerCase() === 'ativo')
+    .reduce((acc, r) => acc + (Number(r.total_pontos) || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -269,7 +356,7 @@ export function ConsultaRecibos() {
       )}
 
       {/* Caixa de Busca */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
@@ -283,10 +370,82 @@ export function ConsultaRecibos() {
               />
             </div>
           </div>
-          <button className="flex items-center justify-center px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-200 transition-colors cursor-pointer w-full sm:w-auto">
+          <button 
+            onClick={() => {
+              setTempTurma(filtroTurma);
+              setTempTurno(filtroTurno);
+              setTempStatus(filtroStatus);
+              setIsFiltersOpen(true);
+            }}
+            className={`flex items-center justify-center px-4 py-2.5 rounded-lg border transition-all cursor-pointer w-full sm:w-auto ${
+              filtroTurma || filtroTurno || filtroStatus !== 'todos'
+                ? 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700 font-bold shadow-sm shadow-indigo-100'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+            }`}
+          >
             <Filter className="h-4 w-4 mr-2" /> Filtros
+            {(filtroTurma || filtroTurno || filtroStatus !== 'todos') && (
+              <span className="ml-1.5 px-1.5 py-0.5 text-[10px] bg-white text-indigo-700 rounded-full font-black">
+                !
+              </span>
+            )}
           </button>
         </div>
+
+        {/* Badges de filtros ativos */}
+        {(filtroTurma || filtroTurno || filtroStatus !== 'todos') && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 animate-in fade-in duration-200">
+            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Filtros ativos:</span>
+            {filtroTurma && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-100">
+                Turma: {filtroTurma}
+                <button 
+                  onClick={() => {
+                    setFiltroTurma('');
+                    setTempTurma('');
+                  }} 
+                  className="hover:text-indigo-900 cursor-pointer ml-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            {filtroTurno && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-100">
+                Turno: {filtroTurno === 'manha' ? 'Manhã' : 'Tarde'}
+                <button 
+                  onClick={() => {
+                    setFiltroTurno('');
+                    setTempTurno('');
+                  }} 
+                  className="hover:text-indigo-900 cursor-pointer ml-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            {filtroStatus !== 'todos' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-100">
+                Status: {filtroStatus === 'ativo' ? 'Ativos' : 'Cancelados'}
+                <button 
+                  onClick={() => {
+                    setFiltroStatus('todos');
+                    setTempStatus('todos');
+                  }} 
+                  className="hover:text-indigo-900 cursor-pointer ml-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            <button 
+              onClick={handleClearFilters}
+              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer ml-1"
+            >
+              Limpar tudo
+            </button>
+          </div>
+        )}
       </div>
 
       {errorFetch && (
@@ -300,15 +459,15 @@ export function ConsultaRecibos() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-slate-50 text-slate-700 font-medium">
+            <thead className="bg-slate-50 text-slate-700 font-medium border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 border-b border-slate-200">Status</th>
-                <th className="px-6 py-4 border-b border-slate-200">Nº Recibo</th>
-                <th className="px-6 py-4 border-b border-slate-200">Data</th>
-                <th className="px-6 py-4 border-b border-slate-200">Aluno</th>
-                <th className="px-6 py-4 border-b border-slate-200">Turma/Turno</th>
-                <th className="px-6 py-4 border-b border-slate-200 text-right">Pts</th>
-                <th className="px-6 py-4 border-b border-slate-200 text-right">Ações</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4">Nº Recibo</th>
+                <th className="px-6 py-4">Data</th>
+                <th className="px-6 py-4">Aluno</th>
+                <th className="px-6 py-4">Turma/Turno</th>
+                <th className="px-6 py-4 text-right">Pts</th>
+                <th className="px-6 py-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -341,7 +500,11 @@ export function ConsultaRecibos() {
                   const temSolicitacaoPendente = !!request;
                   
                   return (
-                    <tr key={r.id} className="hover:bg-slate-50">
+                    <tr 
+                      key={r.id} 
+                      className="hover:bg-slate-50 cursor-pointer transition-colors"
+                      onClick={() => setReciboVisualizarId(r.id)}
+                    >
                       <td className="px-6 py-4">
                         {temSolicitacaoPendente ? (
                           <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
@@ -395,7 +558,10 @@ export function ConsultaRecibos() {
                         <div className="flex justify-end space-x-2">
                           {/* Visualização de Recibo */}
                           <button 
-                            onClick={() => navigate(`/recibo/${r.id}`)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReciboVisualizarId(r.id);
+                            }}
                             className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-1.5 rounded-md cursor-pointer"
                             title="Visualizar / Imprimir"
                           >
@@ -410,7 +576,10 @@ export function ConsultaRecibos() {
                             <button 
                               className="text-rose-600 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 p-1.5 rounded-md cursor-pointer inline-flex items-center"
                               title="Solicitar cancelamento"
-                              onClick={() => handleSolicitarClick(r)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSolicitarClick(r);
+                              }}
                             >
                               <Ban className="h-4 w-4" />
                             </button>
@@ -421,7 +590,10 @@ export function ConsultaRecibos() {
                             <button 
                               className="text-white hover:bg-amber-700 bg-amber-600 p-1.5 rounded-md cursor-pointer inline-flex items-center"
                               title="Analisar Solicitação Pendente"
-                              onClick={() => handleAnalisarClick(request)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAnalisarClick(request);
+                              }}
                             >
                               <AlertCircle className="h-4 w-4 animate-pulse" />
                             </button>
@@ -433,8 +605,40 @@ export function ConsultaRecibos() {
                 })
               )}
             </tbody>
+
+            {/* Linha de Totalizador no Rodapé da Tabela */}
+            {!loading && recibosFiltrados.length > 0 && (
+              <tfoot className="bg-slate-50 font-bold text-slate-800 border-t-2 border-slate-200">
+                <tr>
+                  <td colSpan={5} className="px-6 py-4 text-left font-black uppercase tracking-wider text-xs text-slate-500">
+                    Soma de Pontuação (Apenas Ativos)
+                  </td>
+                  <td className="px-6 py-4 text-right text-indigo-600 font-black text-base">
+                    {formatPoints(somaTotalPontos)}
+                  </td>
+                  <td className="px-6 py-4"></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
+
+        {/* Card de Resumo de Pontos Filtrados */}
+        {!loading && recibosFiltrados.length > 0 && (
+          <div className="flex justify-end p-4 bg-slate-50 border-t border-slate-100">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-6 shadow-sm">
+              <div>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest block">Pontuação Arrecadada (Filtrada)</span>
+                <span className="text-xs text-slate-450">Desconsidera recibos cancelados</span>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-black text-indigo-700 block">
+                  {formatPoints(somaTotalPontos)} <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest">pts</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal de Alerta de Duplicidade */}
@@ -636,6 +840,133 @@ export function ConsultaRecibos() {
               >
                 Confirmar Cancelamento
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal/Panel de Filtros */}
+      {isFiltersOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+            onClick={() => setIsFiltersOpen(false)}
+          />
+          <div className="relative bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Filter className="h-5 w-5 text-indigo-600" />
+                <h3 className="text-lg font-bold text-slate-900">Filtrar Recibos</h3>
+              </div>
+              <button 
+                onClick={() => setIsFiltersOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 py-4">
+              {/* Turma */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Turma
+                </label>
+                <select
+                  value={tempTurma}
+                  onChange={(e) => setTempTurma(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Todas as Turmas</option>
+                  {mockTurmas
+                    .filter(t => {
+                      if (profile?.perfil === 'manha' || profile?.perfil === 'tarde') {
+                        return getTurnoNormalizado(t.turno) === userTurno;
+                      }
+                      return true;
+                    })
+                    .map(t => (
+                      <option key={t.id} value={t.nome}>
+                        {t.nome} ({t.turno === 'manha' ? 'Manhã' : 'Tarde'})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Turno (Apenas para admin ou consulta) */}
+              {(profile?.perfil === 'admin' || profile?.perfil === 'consulta') && (
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Turno
+                  </label>
+                  <select
+                    value={tempTurno}
+                    onChange={(e) => setTempTurno(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">Todos os Turnos</option>
+                    <option value="manha">Manhã</option>
+                    <option value="tarde">Tarde</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Status */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Status
+                </label>
+                <select
+                  value={tempStatus}
+                  onChange={(e) => setTempStatus(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="todos">Todos</option>
+                  <option value="ativo">Ativos</option>
+                  <option value="cancelado">Cancelados</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="px-4 py-2.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Limpar Filtros
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyFilters(tempTurma, tempTurno, tempStatus)}
+                disabled={isApplying}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                {isApplying && <Loader2 className="h-3 w-3 animate-spin" />}
+                Aplicar Filtros
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Visualização Detalhada do Recibo */}
+      {reciboVisualizarId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+            onClick={() => setReciboVisualizarId(null)}
+          />
+          <div className="relative bg-white w-full max-w-4xl h-[90vh] rounded-3xl shadow-2xl overflow-y-auto animate-in zoom-in-95 duration-200 flex flex-col p-6 sm:p-8">
+            <button 
+              onClick={() => setReciboVisualizarId(null)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-50 transition-colors z-10 cursor-pointer"
+              title="Fechar"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <div className="mt-4">
+              <ReciboView reciboId={reciboVisualizarId} onClose={() => setReciboVisualizarId(null)} />
             </div>
           </div>
         </div>
