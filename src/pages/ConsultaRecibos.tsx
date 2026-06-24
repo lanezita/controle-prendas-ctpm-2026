@@ -16,7 +16,7 @@ import {
   Recibo
 } from '../lib/mock-data';
 import { formatPoints } from '../lib/utils';
-import { Search, Eye, Ban, Filter, AlertCircle, Shield, Check, X, Loader2 } from 'lucide-react';
+import { Search, Eye, Ban, Filter, AlertCircle, Shield, Check, X, Loader2, Printer } from 'lucide-react';
 
 export function ConsultaRecibos() {
   const { profile } = useAuth();
@@ -298,9 +298,18 @@ export function ConsultaRecibos() {
         <h1 className="text-2xl font-bold text-slate-800">Consulta de Recibos</h1>
       </div>
 
+      {/* Cabeçalho exclusivo para impressão (espelho de auditoria) */}
+      <div className="hidden print:block border-b border-slate-200 pb-2 text-xs text-slate-500 mb-2">
+        <p className="font-bold text-slate-800 text-sm mb-1">Espelho de Auditoria de Recibos</p>
+        <div className="flex justify-between items-center">
+          <span>Gerado por: <strong className="text-slate-700">{profile?.nome || 'Usuário'} ({profile?.perfil === 'admin' ? 'Administrador' : profile?.perfil === 'consulta' ? 'Consulta' : `Operador ${profile?.perfil === 'manha' ? 'Manhã' : 'Tarde'}`})</strong></span>
+          <span>Data de Emissão: <strong className="text-slate-700">{new Date().toLocaleString('pt-BR')}</strong></span>
+        </div>
+      </div>
+
       {/* PAINEL ADMIN: Solicitações de Cancelamento Pendentes */}
       {profile?.perfil === 'admin' && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4 print:hidden">
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-indigo-600" />
             <h2 className="text-lg font-bold text-slate-800">Solicitações de Cancelamento Pendentes</h2>
@@ -356,8 +365,8 @@ export function ConsultaRecibos() {
       )}
 
       {/* Caixa de Busca */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
-        <div className="flex flex-col sm:flex-row gap-4">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4 print:border-none print:shadow-none print:bg-transparent print:p-0 print:space-y-0 print:m-0">
+        <div className="flex flex-col sm:flex-row gap-4 print:hidden">
           <div className="flex-1">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
@@ -390,11 +399,17 @@ export function ConsultaRecibos() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center justify-center px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg border border-slate-900 transition-all cursor-pointer w-full sm:w-auto font-bold"
+          >
+            <Printer className="h-4 w-4 mr-2" /> Imprimir Espelho
+          </button>
         </div>
 
         {/* Badges de filtros ativos */}
-        {(filtroTurma || filtroTurno || filtroStatus !== 'todos') && (
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 animate-in fade-in duration-200">
+        {(filtroTurma || filtroTurno || filtroStatus !== 'todos') ? (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 animate-in fade-in duration-200 print:border-none print:pt-0">
             <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Filtros ativos:</span>
             {filtroTurma && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-100">
@@ -404,7 +419,7 @@ export function ConsultaRecibos() {
                     setFiltroTurma('');
                     setTempTurma('');
                   }} 
-                  className="hover:text-indigo-900 cursor-pointer ml-0.5"
+                  className="hover:text-indigo-900 cursor-pointer ml-0.5 print:hidden"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -418,7 +433,7 @@ export function ConsultaRecibos() {
                     setFiltroTurno('');
                     setTempTurno('');
                   }} 
-                  className="hover:text-indigo-900 cursor-pointer ml-0.5"
+                  className="hover:text-indigo-900 cursor-pointer ml-0.5 print:hidden"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -432,7 +447,7 @@ export function ConsultaRecibos() {
                     setFiltroStatus('todos');
                     setTempStatus('todos');
                   }} 
-                  className="hover:text-indigo-900 cursor-pointer ml-0.5"
+                  className="hover:text-indigo-900 cursor-pointer ml-0.5 print:hidden"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -440,10 +455,14 @@ export function ConsultaRecibos() {
             )}
             <button 
               onClick={handleClearFilters}
-              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer ml-1"
+              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer ml-1 print:hidden"
             >
               Limpar tudo
             </button>
+          </div>
+        ) : (
+          <div className="hidden print:block text-xs text-slate-400 italic pt-1">
+            Nenhum filtro aplicado. Exibindo todos os recibos disponíveis para o seu nível de acesso.
           </div>
         )}
       </div>
@@ -456,9 +475,9 @@ export function ConsultaRecibos() {
       )}
 
       {/* Listagem Geral de Recibos */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:border-none print:shadow-none print:bg-transparent print:w-full">
+        <div className="overflow-x-auto print:overflow-visible print:w-full">
+          <table className="w-full text-left text-sm whitespace-nowrap print:w-full">
             <thead className="bg-slate-50 text-slate-700 font-medium border-b border-slate-200">
               <tr>
                 <th className="px-6 py-4">Status</th>
@@ -467,7 +486,7 @@ export function ConsultaRecibos() {
                 <th className="px-6 py-4">Aluno</th>
                 <th className="px-6 py-4">Turma/Turno</th>
                 <th className="px-6 py-4 text-right">Pts</th>
-                <th className="px-6 py-4 text-right">Ações</th>
+                <th className="px-6 py-4 text-right print:hidden">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -502,7 +521,7 @@ export function ConsultaRecibos() {
                   return (
                     <tr 
                       key={r.id} 
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
+                      className="hover:bg-slate-50 cursor-pointer transition-colors print:break-inside-avoid"
                       onClick={() => setReciboVisualizarId(r.id)}
                     >
                       <td className="px-6 py-4">
@@ -554,7 +573,7 @@ export function ConsultaRecibos() {
                         <span className="block text-xs text-slate-500 capitalize">{turnoExibicao}</span>
                       </td>
                       <td className="px-6 py-4 text-right font-medium text-indigo-600">{formatPoints(r.total_pontos)}</td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right print:hidden">
                         <div className="flex justify-end space-x-2">
                           {/* Visualização de Recibo */}
                           <button 
@@ -616,7 +635,7 @@ export function ConsultaRecibos() {
                   <td className="px-6 py-4 text-right text-indigo-600 font-black text-base">
                     {formatPoints(somaTotalPontos)}
                   </td>
-                  <td className="px-6 py-4"></td>
+                  <td className="px-6 py-4 print:hidden"></td>
                 </tr>
               </tfoot>
             )}
@@ -625,7 +644,7 @@ export function ConsultaRecibos() {
 
         {/* Card de Resumo de Pontos Filtrados */}
         {!loading && recibosFiltrados.length > 0 && (
-          <div className="flex justify-end p-4 bg-slate-50 border-t border-slate-100">
+          <div className="flex justify-end p-4 bg-slate-50 border-t border-slate-100 print:hidden">
             <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-6 shadow-sm">
               <div>
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-widest block">Pontuação Arrecadada (Filtrada)</span>
