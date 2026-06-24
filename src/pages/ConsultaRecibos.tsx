@@ -321,7 +321,7 @@ export function ConsultaRecibos() {
   return (
     <div 
       id={reciboVisualizarId ? undefined : "print-area"} 
-      className="space-y-6 print:block print:visible print:h-auto print:overflow-visible print:w-full print:bg-white print:text-black print:[print-color-adjust:exact]"
+      className="space-y-6 print:block print:visible print:h-auto print:overflow-visible print:w-full print:bg-white print:text-black print:[print-color-adjust:exact] print:pb-24"
     >
       <div className="flex items-center justify-between print:hidden">
         <h1 className="text-2xl font-bold text-slate-800">Consulta de Recibos</h1>
@@ -696,53 +696,31 @@ export function ConsultaRecibos() {
                 })
               )}
             </tbody>
-
-            {/* Linha de Totalizador no Rodapé da Tabela */}
-            {!loading && recibosFiltrados.length > 0 && (
-              <tfoot className="bg-slate-50 font-bold text-slate-800 border-t-2 border-slate-200 print:table-footer-group print:border-t-2 print:border-black print:bg-transparent print:text-black print:break-inside-avoid print:static">
-                <tr className="print:break-inside-avoid">
-                  <td className="px-6 py-4 print:hidden"></td>
-                  <td colSpan={5} className="px-6 py-4 text-left font-black uppercase tracking-wider text-xs text-slate-500 print:text-black print:font-bold">
-                    {temSelecaoAtiva ? (
-                      <span className="text-indigo-700 font-black print:text-black">
-                        Soma Selecionada ({selectedActiveRecibos.length} de {selectableRecibos.length} recibos ativos)
-                      </span>
-                    ) : (
-                      <span className="print:text-black">Soma de Pontuação (Apenas Ativos)</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-right text-indigo-600 font-black text-base print:text-black print:font-black">
-                    {formatPoints(somaTotalPontos)}
-                  </td>
-                  <td className="px-6 py-4 print:hidden"></td>
-                </tr>
-              </tfoot>
-            )}
           </table>
         </div>
 
-        {/* Card de Resumo de Pontos Filtrados */}
+        {/* Novo Bloco Independente: Rodapé de Soma de Pontuação */}
         {!loading && recibosFiltrados.length > 0 && (
-          <div className="flex justify-end p-4 bg-slate-50 border-t border-slate-100 print:hidden">
-            <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-6 shadow-sm">
-              <div>
-                {temSelecaoAtiva ? (
-                  <>
-                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest block">Total Selecionado ({selectedActiveRecibos.length} recibos)</span>
-                    <span className="text-xs text-slate-500">De {formatPoints(totalAtivosFiltrados)} pts filtrados</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-widest block">Pontuação Arrecadada (Filtrada)</span>
-                    <span className="text-xs text-slate-450">Desconsidera recibos cancelados</span>
-                  </>
-                )}
-              </div>
-              <div className="text-right">
-                <span className="text-2xl font-black text-indigo-700 block">
-                  {formatPoints(somaTotalPontos)} <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest">pts</span>
-                </span>
-              </div>
+          <div className="flex justify-between items-center px-6 py-4 bg-slate-50 border-t border-slate-200 font-bold text-slate-800 print:!block print:w-full print:mt-8 print:border-t-2 print:border-black print:pt-4 print:break-inside-avoid print:bg-transparent print:text-black">
+            <div className="text-left font-black uppercase tracking-wider text-xs text-slate-500 print:text-black print:font-bold">
+              {temSelecaoAtiva ? (
+                <>
+                  <span className="text-indigo-700 font-black print:text-black block text-sm sm:text-xs">
+                    Total Selecionado ({selectedActiveRecibos.length} recibos)
+                  </span>
+                  <span className="text-xs text-slate-500 print:text-black font-normal block print:mt-1">
+                    De {formatPoints(totalAtivosFiltrados)} pts filtrados
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="print:text-black text-slate-500 block text-sm sm:text-xs">Soma de Pontuação (Apenas Ativos)</span>
+                  <span className="text-xs text-slate-400 font-normal block print:hidden">Desconsidera recibos cancelados</span>
+                </>
+              )}
+            </div>
+            <div className="text-right text-indigo-700 font-black text-2xl print:text-black print:font-black">
+              {formatPoints(somaTotalPontos)} <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest print:text-black">pts</span>
             </div>
           </div>
         )}
