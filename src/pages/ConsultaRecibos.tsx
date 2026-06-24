@@ -43,6 +43,9 @@ export function ConsultaRecibos() {
   // Estado para visualização de recibo em modal
   const [reciboVisualizarId, setReciboVisualizarId] = useState<string | null>(null);
 
+  // Estado para seleção múltipla de recibos
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
+
   // Carrega as solicitações e recibos do Supabase se disponível ou lê do cache local
   useEffect(() => {
     async function loadData() {
@@ -72,6 +75,11 @@ export function ConsultaRecibos() {
     }
     loadData();
   }, []);
+
+  // Limpa seleção ao alterar os filtros ou buscas
+  useEffect(() => {
+    setSelectedRows([]);
+  }, [filtroTurma, filtroTurno, filtroStatus, busca]);
 
   // Estados para Auditoria de Cancelamento Direto do Admin
   const [modalCancelamentoOpen, setModalCancelamentoOpen] = useState(false);
@@ -287,14 +295,35 @@ export function ConsultaRecibos() {
     return true;
   });
 
-  // Somatório dinâmico considerando apenas recibos com status === 'ativo'
-  const somaTotalPontos = recibosFiltrados
+  // Elementos selecionáveis (ativos e filtrados)
+  const selectableRecibos = recibosFiltrados.filter(
+    r => r.status.toLowerCase() !== 'cancelado'
+  );
+
+  const selectedActiveRecibos = recibosFiltrados.filter(
+    r => r.status.toLowerCase() === 'ativo' && selectedRows.includes(r.id)
+  );
+
+  const temSelecaoAtiva = selectedRows.length > 0;
+
+  const totalAtivosFiltrados = recibosFiltrados
     .filter(r => r.status.toLowerCase() === 'ativo')
     .reduce((acc, r) => acc + (Number(r.total_pontos) || 0), 0);
 
+  // Somatório dinâmico considerando a seleção ou todos os ativos filtrados
+  const somaTotalPontos = temSelecaoAtiva
+    ? selectedActiveRecibos.reduce((acc, r) => acc + (Number(r.total_pontos) || 0), 0)
+    : totalAtivosFiltrados;
+
+  const areAllSelected = selectableRecibos.length > 0 && selectableRecibos.every(r => selectedRows.includes(r.id));
+  const areSomeSelected = selectableRecibos.length > 0 && selectableRecibos.some(r => selectedRows.includes(r.id)) && !areAllSelected;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div 
+      id={reciboVisualizarId ? undefined : "print-area"} 
+      className="space-y-6 print:block print:visible print:h-auto print:overflow-visible print:w-full print:bg-white print:text-black print:[print-color-adjust:exact]"
+    >
+      <div className="flex items-center justify-between print:hidden">
         <h1 className="text-2xl font-bold text-slate-800">Consulta de Recibos</h1>
       </div>
 
@@ -480,6 +509,33 @@ export function ConsultaRecibos() {
           <table className="w-full text-left text-sm whitespace-nowrap print:w-full">
             <thead className="bg-slate-50 text-slate-700 font-medium border-b border-slate-200">
               <tr>
+                <th className="px-6 py-4 w-12 print:hidden">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                    checked={areAllSelected}
+                    ref={el => {
+                      if (el) {
+                        el.indeterminate = areSomeSelected;
+                      }
+                    }}
+                    onChange={() => {
+                      if (areAllSelected) {
+                        setSelectedRows(prev => prev.filter(id => !selectableRecibos.some(r => r.id === id)));
+                      } else {
+                        setSelectedRows(prev => {
+                          const next = [...prev];
+                          selectableRecibos.forEach(r => {
+                            if (!next.includes(r.id)) {
+                              next.push(r.id);
+                            }
+                          });
+                          return next;
+                        });
+                      }
+                    }}
+                  />
+                </th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Nº Recibo</th>
                 <th className="px-6 py-4">Data</th>
@@ -492,7 +548,7 @@ export function ConsultaRecibos() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
                       <span>Carregando recibos...</span>
@@ -501,7 +557,7 @@ export function ConsultaRecibos() {
                 </tr>
               ) : recibosFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
                     Nenhum recibo encontrado.
                   </td>
                 </tr>
@@ -524,6 +580,22 @@ export function ConsultaRecibos() {
                       className="hover:bg-slate-50 cursor-pointer transition-colors print:break-inside-avoid"
                       onClick={() => setReciboVisualizarId(r.id)}
                     >
+                      <td className="px-6 py-4 w-12 print:hidden" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          disabled={r.status.toLowerCase() === 'cancelado'}
+                          checked={selectedRows.includes(r.id)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            if (checked) {
+                              setSelectedRows(prev => [...prev, r.id]);
+                            } else {
+                              setSelectedRows(prev => prev.filter(id => id !== r.id));
+                            }
+                          }}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                        />
+                      </td>
                       <td className="px-6 py-4">
                         {temSolicitacaoPendente ? (
                           <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
@@ -629,8 +701,15 @@ export function ConsultaRecibos() {
             {!loading && recibosFiltrados.length > 0 && (
               <tfoot className="bg-slate-50 font-bold text-slate-800 border-t-2 border-slate-200">
                 <tr>
+                  <td className="px-6 py-4 print:hidden"></td>
                   <td colSpan={5} className="px-6 py-4 text-left font-black uppercase tracking-wider text-xs text-slate-500">
-                    Soma de Pontuação (Apenas Ativos)
+                    {temSelecaoAtiva ? (
+                      <span className="text-indigo-700 font-black">
+                        Soma Selecionada ({selectedActiveRecibos.length} de {selectableRecibos.length} recibos ativos)
+                      </span>
+                    ) : (
+                      'Soma de Pontuação (Apenas Ativos)'
+                    )}
                   </td>
                   <td className="px-6 py-4 text-right text-indigo-600 font-black text-base">
                     {formatPoints(somaTotalPontos)}
@@ -647,8 +726,17 @@ export function ConsultaRecibos() {
           <div className="flex justify-end p-4 bg-slate-50 border-t border-slate-100 print:hidden">
             <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-6 shadow-sm">
               <div>
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest block">Pontuação Arrecadada (Filtrada)</span>
-                <span className="text-xs text-slate-450">Desconsidera recibos cancelados</span>
+                {temSelecaoAtiva ? (
+                  <>
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest block">Total Selecionado ({selectedActiveRecibos.length} recibos)</span>
+                    <span className="text-xs text-slate-500">De {formatPoints(totalAtivosFiltrados)} pts filtrados</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-widest block">Pontuação Arrecadada (Filtrada)</span>
+                    <span className="text-xs text-slate-450">Desconsidera recibos cancelados</span>
+                  </>
+                )}
               </div>
               <div className="text-right">
                 <span className="text-2xl font-black text-indigo-700 block">
