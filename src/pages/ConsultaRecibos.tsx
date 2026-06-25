@@ -86,6 +86,7 @@ export function ConsultaRecibos() {
   const [reciboParaCancelar, setReciboParaCancelar] = useState<{ id: string, numero: string } | null>(null);
   const [motivoCancelamento, setMotivoCancelamento] = useState('');
   const [erroCancelamento, setErroCancelamento] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Estados para Solicitação de Cancelamento do Operador
   const [modalSolicitarOpen, setModalSolicitarOpen] = useState(false);
@@ -98,6 +99,8 @@ export function ConsultaRecibos() {
   const [modalAnaliseOpen, setModalAnaliseOpen] = useState(false);
   const [solicitacaoEmAnalise, setSolicitacaoEmAnalise] = useState<SolicitacaoCancelamento | null>(null);
   const [observacaoAnalise, setObservacaoAnalise] = useState('');
+  const [erroAnalise, setErroAnalise] = useState('');
+  const [isAnalysing, setIsAnalysing] = useState(false);
 
   // Handler para cancelar diretamente (admin)
   const handleCancelarClick = (id: string, numero: string) => {
@@ -113,12 +116,30 @@ export function ConsultaRecibos() {
       return;
     }
     if (reciboParaCancelar && profile) {
-      const canceladoPor = `${profile.nome} (Administrador)`;
-      await cancelMockRecibo(reciboParaCancelar.id, canceladoPor, motivoCancelamento.trim());
-      setRecibosList([...mockRecibos]);
-      setModalCancelamentoOpen(false);
-      setReciboParaCancelar(null);
-      setMotivoCancelamento('');
+      try {
+        setIsCancelling(true);
+        setErroCancelamento('');
+        const canceladoPor = `${profile.nome} (Administrador)`;
+        
+        // cancelMockRecibo returns Promise<boolean> indicating actual success
+        const success = await cancelMockRecibo(reciboParaCancelar.id, canceladoPor, motivoCancelamento.trim());
+        
+        if (success) {
+          // Force a secure reload/sync from Supabase database to guarantee accurate UI matches DB
+          const resRecibos = await fetchRecibosFromDB();
+          setRecibosList([...resRecibos]);
+          
+          setModalCancelamentoOpen(false);
+          setReciboParaCancelar(null);
+          setMotivoCancelamento('');
+        } else {
+          setErroCancelamento('Falha crítica ao persistir cancelamento no Supabase. O recibo não foi cancelado.');
+        }
+      } catch (err: any) {
+        setErroCancelamento('Erro inesperado: ' + (err?.message || String(err)));
+      } finally {
+        setIsCancelling(false);
+      }
     }
   };
 
@@ -179,20 +200,38 @@ export function ConsultaRecibos() {
   const confirmarAnalise = async (novoStatus: 'aprovada' | 'recusada') => {
     if (!solicitacaoEmAnalise || !profile) return;
 
-    const ok = await processarAnaliseSolicitacao(
-      solicitacaoEmAnalise.id,
-      novoStatus,
-      profile.id,
-      profile.nome,
-      observacaoAnalise.trim()
-    );
+    try {
+      setIsAnalysing(true);
+      setErroAnalise('');
+      
+      const ok = await processarAnaliseSolicitacao(
+        solicitacaoEmAnalise.id,
+        novoStatus,
+        profile.id,
+        profile.nome,
+        observacaoAnalise.trim()
+      );
 
-    if (ok) {
-      setRecibosList([...mockRecibos]);
-      setSolicitacoesList([...mockSolicitacoes]);
-      setModalAnaliseOpen(false);
-      setSolicitacaoEmAnalise(null);
-      setObservacaoAnalise('');
+      if (ok) {
+        // Force a secure reload/sync from Supabase database to guarantee accurate UI matches DB
+        const resRecibos = await fetchRecibosFromDB();
+        setRecibosList([...resRecibos]);
+        
+        const resSols = await fetchSolicitacoesCancelamentoFromDB();
+        if (resSols) {
+          setSolicitacoesList([...resSols]);
+        }
+        
+        setModalAnaliseOpen(false);
+        setSolicitacaoEmAnalise(null);
+        setObservacaoAnalise('');
+      } else {
+        setErroAnalise('Falha ao registrar a decisão de cancelamento no Supabase. O recibo permanece ativo.');
+      }
+    } catch (err: any) {
+      setErroAnalise('Erro inesperado: ' + (err?.message || String(err)));
+    } finally {
+      setIsAnalysing(false);
     }
   };
 
@@ -813,7 +852,7 @@ export function ConsultaRecibos() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
-            onClick={() => setModalAnaliseOpen(false)}
+            onClick={() => !isAnalysing && setModalAnaliseOpen(false)}
           />
           <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col p-6">
             <div className="mb-4">
@@ -837,17 +876,24 @@ export function ConsultaRecibos() {
                 Observação / Justificativa da Análise (Opcional)
               </label>
               <textarea
+                disabled={isAnalysing}
                 placeholder="Insira notas adicionais sobre a homologação aqui..."
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm h-20 resize-none text-slate-800"
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm h-20 resize-none text-slate-800 disabled:opacity-50"
                 value={observacaoAnalise}
                 onChange={(e) => setObservacaoAnalise(e.target.value)}
               />
+              {erroAnalise && (
+                <p className="text-xs font-semibold text-rose-500 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3 inline" /> {erroAnalise}
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-between gap-3 mt-4 pt-2 border-t border-slate-100">
               <button
+                disabled={isAnalysing}
                 onClick={() => setModalAnaliseOpen(false)}
-                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors cursor-pointer"
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
               >
                 Voltar
               </button>
@@ -855,17 +901,19 @@ export function ConsultaRecibos() {
               <div className="flex gap-2">
                 <button
                   type="button"
+                  disabled={isAnalysing}
                   onClick={() => confirmarAnalise('recusada')}
-                  className="px-4 py-2.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1"
+                  className="px-4 py-2.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
                 >
-                  <X className="h-3.5 w-3.5" /> Recusar
+                  <X className="h-3.5 w-3.5" /> {isAnalysing ? 'Aguarde...' : 'Recusar'}
                 </button>
                 <button
                   type="button"
+                  disabled={isAnalysing}
                   onClick={() => confirmarAnalise('aprovada')}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1 shadow-sm active:scale-95"
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1 shadow-sm active:scale-95 disabled:opacity-50"
                 >
-                  <Check className="h-3.5 w-3.5" /> Aprovar
+                  <Check className="h-3.5 w-3.5" /> {isAnalysing ? 'Processando...' : 'Aprovar'}
                 </button>
               </div>
             </div>
@@ -878,7 +926,7 @@ export function ConsultaRecibos() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
-            onClick={() => setModalCancelamentoOpen(false)}
+            onClick={() => !isCancelling && setModalCancelamentoOpen(false)}
           />
           <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col p-6">
             <div className="mb-4">
@@ -897,8 +945,9 @@ export function ConsultaRecibos() {
                 Motivo do Cancelamento <span className="text-rose-500">*</span>
               </label>
               <textarea
+                disabled={isCancelling}
                 placeholder="Exemplo: Erro de digitação na quantidade de Amoebas recebidas."
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none transition-all text-sm h-24 resize-none text-slate-800"
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none transition-all text-sm h-24 resize-none text-slate-800 disabled:opacity-50"
                 value={motivoCancelamento}
                 onChange={(e) => {
                   setMotivoCancelamento(e.target.value);
@@ -914,16 +963,18 @@ export function ConsultaRecibos() {
 
             <div className="flex items-center justify-end gap-3 mt-4">
               <button
+                disabled={isCancelling}
                 onClick={() => setModalCancelamentoOpen(false)}
-                className="px-5 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors cursor-pointer"
+                className="px-5 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
               >
                 Manter Ativo
               </button>
               <button
+                disabled={isCancelling}
                 onClick={confirmarCancelamento}
-                className="px-5 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-md shadow-rose-100 active:scale-95 cursor-pointer"
+                className="px-5 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-md shadow-rose-100 active:scale-95 cursor-pointer disabled:opacity-50"
               >
-                Confirmar Cancelamento
+                {isCancelling ? 'Cancelando...' : 'Confirmar Cancelamento'}
               </button>
             </div>
           </div>
