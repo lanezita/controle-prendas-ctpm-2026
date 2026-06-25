@@ -121,10 +121,10 @@ export function ConsultaRecibos() {
         setErroCancelamento('');
         const canceladoPor = `${profile.nome} (Administrador)`;
         
-        // cancelMockRecibo returns Promise<boolean> indicating actual success
-        const success = await cancelMockRecibo(reciboParaCancelar.id, canceladoPor, motivoCancelamento.trim());
+        // cancelMockRecibo returns CancelReciboResult indicating actual success and details
+        const result = await cancelMockRecibo(reciboParaCancelar.id, canceladoPor, motivoCancelamento.trim());
         
-        if (success) {
+        if (result.success) {
           // Force a secure reload/sync from Supabase database to guarantee accurate UI matches DB
           const resRecibos = await fetchRecibosFromDB();
           setRecibosList([...resRecibos]);
@@ -133,7 +133,7 @@ export function ConsultaRecibos() {
           setReciboParaCancelar(null);
           setMotivoCancelamento('');
         } else {
-          setErroCancelamento('Falha crítica ao persistir cancelamento no Supabase. O recibo não foi cancelado.');
+          setErroCancelamento(`Falha na ${result.errorStage || 'etapa'}: ${result.errorMessage || 'Falha ao persistir cancelamento no Supabase.'}`);
         }
       } catch (err: any) {
         setErroCancelamento('Erro inesperado: ' + (err?.message || String(err)));
@@ -204,7 +204,7 @@ export function ConsultaRecibos() {
       setIsAnalysing(true);
       setErroAnalise('');
       
-      const ok = await processarAnaliseSolicitacao(
+      const result = await processarAnaliseSolicitacao(
         solicitacaoEmAnalise.id,
         novoStatus,
         profile.id,
@@ -212,11 +212,13 @@ export function ConsultaRecibos() {
         observacaoAnalise.trim()
       );
 
-      if (ok) {
+      if (result.success) {
         // Force a secure reload/sync from Supabase database to guarantee accurate UI matches DB
+        console.log('[CANCEL_AUDIT] [ETAPA 5] Refetch de recibos...');
         const resRecibos = await fetchRecibosFromDB();
         setRecibosList([...resRecibos]);
         
+        console.log('[CANCEL_AUDIT] [ETAPA 6] Refetch de solicitações...');
         const resSols = await fetchSolicitacoesCancelamentoFromDB();
         if (resSols) {
           setSolicitacoesList([...resSols]);
@@ -226,7 +228,7 @@ export function ConsultaRecibos() {
         setSolicitacaoEmAnalise(null);
         setObservacaoAnalise('');
       } else {
-        setErroAnalise('Falha ao registrar a decisão de cancelamento no Supabase. O recibo permanece ativo.');
+        setErroAnalise(`Falha na ${result.errorStage || 'etapa'}: ${result.errorMessage || 'Falha ao registrar a decisão de cancelamento no Supabase.'}`);
       }
     } catch (err: any) {
       setErroAnalise('Erro inesperado: ' + (err?.message || String(err)));
