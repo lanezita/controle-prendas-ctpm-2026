@@ -1031,7 +1031,6 @@ export async function processarAnaliseSolicitacao(
       const payloadSolicitacao = {
         status: novoStatus,
         analisado_por: analisadoPorId,
-        analisado_por_nome: analisadoPorNome,
         analisado_em: analisadoEm,
         observacao_admin: observacaoAnalise || null
       };
