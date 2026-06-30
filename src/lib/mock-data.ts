@@ -1121,12 +1121,18 @@ export async function fetchSolicitacoesCancelamentoFromDB(): Promise<Solicitacao
           analisado_em: row.analisado_em || undefined,
           observacao_analise: row.observacao_admin || undefined
         }));
-        const dbIds = new Set(dbSolicitacoes.map(s => s.id));
+        const dbReciboIds = new Set(dbSolicitacoes.map(s => s.recibo_id));
         const merged = [...dbSolicitacoes];
 
         mockSolicitacoes.forEach(local => {
-          if (!dbIds.has(local.id) && local.id.startsWith('sol_off_')) {
-            merged.push(local);
+          if (local.id.startsWith('sol_off_')) {
+            if (!dbReciboIds.has(local.recibo_id)) {
+              merged.push(local);
+            }
+          } else {
+            if (!dbSolicitacoes.some(s => s.id === local.id)) {
+              merged.push(local);
+            }
           }
         });
 
