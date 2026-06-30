@@ -119,10 +119,9 @@ export function ConsultaRecibos() {
       try {
         setIsCancelling(true);
         setErroCancelamento('');
-        const canceladoPor = `${profile.nome} (Administrador)`;
         
         // cancelMockRecibo returns CancelReciboResult indicating actual success and details
-        const result = await cancelMockRecibo(reciboParaCancelar.id, canceladoPor, motivoCancelamento.trim());
+        const result = await cancelMockRecibo(reciboParaCancelar.id, profile.id, motivoCancelamento.trim(), profile.nome);
         
         if (result.success) {
           // Force a secure reload/sync from Supabase database to guarantee accurate UI matches DB

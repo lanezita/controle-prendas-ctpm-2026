@@ -434,9 +434,12 @@ export interface CancelReciboResult {
   errorDetails?: any;
 }
 
-export async function cancelMockRecibo(reciboId: string, canceladoPor: string, motivo: string): Promise<CancelReciboResult> {
-  const canceladoEm = new Date().toISOString();
-
+export async function cancelMockRecibo(
+  reciboId: string,
+  canceladoPorId: string,
+  motivo: string,
+  canceladoPorNome?: string
+): Promise<CancelReciboResult> {
   console.log('[CANCEL_AUDIT] [ETAPA 1/4] Iniciando cancelamento para reciboId:', reciboId);
 
   // Procure o recibo no cache local primeiro para obter as informações necessárias
@@ -462,80 +465,17 @@ export async function cancelMockRecibo(reciboId: string, canceladoPor: string, m
     alunoId: alunoId
   });
 
-  // Se o Supabase estiver online, tente persistir no banco de dados primeiro (Sem atualização otimista!)
+  // Se o Supabase estiver online, persistir na tabela recibos
   if (isSupabaseConfigured) {
     try {
       console.log('[CANCEL_AUDIT] [ETAPA 3] Conectando ao Supabase para persistir cancelamento...');
 
-      // 1. Atualizar a tabela de lançamentos associada de forma segura usando chaves primárias
-      console.log('[CANCEL_AUDIT] [ETAPA 3] Buscando lançamentos associados de forma direta por numero_recibo:', numeroRecibo);
-      
-      const { data: lancamentosData, error: qError } = await supabase
-        .from('lancamentos')
-        .select('id')
-        .eq('numero_recibo', numeroRecibo);
+      // Como o banco utiliza a tabela recibo_itens (que não possui colunas de status ou cancelamento) e não possui a tabela public.lancamentos,
+      // pulamos qualquer atualização de lançamentos no banco de dados. A integridade e o cancelamento do recibo e seus itens são controlados
+      // de forma normalizada na tabela recibos.
+      console.log('[CANCEL_AUDIT] [ETAPA 3] Ignorando atualização de lançamentos no banco (tabela lancamentos inexistente; controlada via recibo_itens normalizada).');
 
-      if (qError) {
-        console.error(
-          '[CANCEL_AUDIT] [ETAPA 3] Erro Supabase ao buscar lançamentos associados:',
-          qError.message,
-          qError.details,
-          qError.hint,
-          qError
-        );
-        return {
-          success: false,
-          errorStage: 'Etapa 3: Buscar lançamentos relacionados',
-          errorMessage: qError.message,
-          errorDetails: qError
-        };
-      }
-
-      if (lancamentosData && lancamentosData.length > 0) {
-        const ids = lancamentosData.map((lan: any) => lan.id);
-        
-        const payloadLancamentos = {
-          ids,
-          status: 'cancelado',
-          cancelado_por: canceladoPor,
-          cancelado_em: canceladoEm,
-          motivo_cancelamento: motivo,
-          updated_at: canceladoEm
-        };
-        console.log('[CANCEL_AUDIT] [ETAPA 3] Payload UPDATE lançamentos:', payloadLancamentos);
-        
-        const resLancamentos = await supabase
-          .from('lancamentos')
-          .update({ 
-            status: 'cancelado', 
-            cancelado_por: canceladoPor,
-            cancelado_em: canceladoEm,
-            motivo_cancelamento: motivo,
-            updated_at: canceladoEm 
-          })
-          .in('id', ids);
-
-        if (resLancamentos.error) {
-          console.error(
-            '[CANCEL_AUDIT] [ETAPA 3] Erro Supabase ao atualizar lançamentos:',
-            resLancamentos.error.message,
-            resLancamentos.error.details,
-            resLancamentos.error.hint,
-            resLancamentos.error
-          );
-          return {
-            success: false,
-            errorStage: 'Etapa 3: Atualizar lançamentos relacionados',
-            errorMessage: resLancamentos.error.message,
-            errorDetails: resLancamentos.error
-          };
-        }
-        console.log('[CANCEL_AUDIT] [ETAPA 3] Lançamentos atualizados com sucesso.');
-      } else {
-        console.log('[CANCEL_AUDIT] [ETAPA 3] Nenhum lançamento associado encontrado para atualização.');
-      }
-
-      // 2. Atualizar a tabela de recibos usando o ID primário (UUID) para garantir unicidade absoluta
+      // Atualizar a tabela de recibos usando o ID primário (UUID) para garantir unicidade absoluta
       if (!receipt.id) {
         const errorMsg = 'ID do recibo está indefinido';
         console.error('[CANCEL_AUDIT] [ETAPA 1] Erro:', errorMsg);
@@ -546,40 +486,40 @@ export async function cancelMockRecibo(reciboId: string, canceladoPor: string, m
         };
       }
 
+      const nomeUsuario = canceladoPorNome || 'Administrador';
+      const canceladoPorTexto = `${nomeUsuario} (Administrador)`;
+      const canceladoEm = new Date().toISOString();
+
       const payloadRecibo = {
-        id: receipt.id,
         status: 'cancelado',
-        cancelado_por: canceladoPor,
+        cancelado_por: canceladoPorTexto,
         cancelado_em: canceladoEm,
         motivo_cancelamento: motivo
       };
       console.log('[CANCEL_AUDIT] [ETAPA 1] Payload UPDATE recibo:', payloadRecibo);
 
-      const resRecibos = await supabase.from('recibos').update({ 
-        status: 'cancelado',
-        cancelado_por: canceladoPor,
-        cancelado_em: canceladoEm,
-        motivo_cancelamento: motivo
-      })
-      .eq('id', receipt.id);
+      const { error: rError } = await supabase
+        .from('recibos')
+        .update(payloadRecibo)
+        .eq('id', receipt.id);
 
-      if (resRecibos.error) {
+      if (rError) {
         console.error(
           '[CANCEL_AUDIT] [ETAPA 1] Erro Supabase ao atualizar recibo:',
-          resRecibos.error.message,
-          resRecibos.error.details,
-          resRecibos.error.hint,
-          resRecibos.error
+          rError.message,
+          rError.details,
+          rError.hint,
+          rError
         );
         return {
           success: false,
           errorStage: 'Etapa 1: Cancelar recibo',
-          errorMessage: resRecibos.error.message,
-          errorDetails: resRecibos.error
+          errorMessage: rError.message,
+          errorDetails: rError
         };
       }
 
-      console.log('[CANCEL_AUDIT] [ETAPA 1] Cancelamento persistido com sucesso no Supabase para o recibo', numeroRecibo);
+      console.log('[CANCEL_AUDIT] [ETAPA 1] Cancelamento de recibo persistido com sucesso no Supabase.');
     } catch (e: any) {
       console.error('[CANCEL_AUDIT] Exceção crítica durante persistência do cancelamento no Supabase:', e);
       return {
@@ -592,6 +532,11 @@ export async function cancelMockRecibo(reciboId: string, canceladoPor: string, m
     console.warn('[CANCEL_AUDIT] Supabase não configurado. Alterações aplicadas apenas localmente.');
   }
 
+  // Nome do usuário para o cache local
+  const nomeUsuario = canceladoPorNome || 'Administrador';
+  const canceladoPorTexto = `${nomeUsuario} (Administrador)`;
+  const canceladoEm = new Date().toISOString();
+
   // Registrar auditoria (Etapa 4)
   console.log('[CANCEL_AUDIT] [ETAPA 4] Registro de auditoria concluído com sucesso (logs de console e cache integrados).');
 
@@ -599,7 +544,7 @@ export async function cancelMockRecibo(reciboId: string, canceladoPor: string, m
   mockRecibos = mockRecibos.map(r => r.id === reciboId ? { 
     ...r, 
     status: 'cancelado' as const,
-    cancelado_por: canceladoPor,
+    cancelado_por: canceladoPorTexto,
     cancelado_em: canceladoEm,
     motivo_cancelamento: motivo
   } : r);
@@ -613,7 +558,7 @@ export async function cancelMockRecibo(reciboId: string, canceladoPor: string, m
       return { 
         ...l, 
         status: 'cancelado' as const, 
-        cancelado_por: canceladoPor,
+        cancelado_por: canceladoPorTexto,
         cancelado_em: canceladoEm,
         motivo_cancelamento: motivo,
         updated_at: canceladoEm 
@@ -1070,7 +1015,7 @@ export async function processarAnaliseSolicitacao(
           };
         }
 
-        const cancelResult = await cancelMockRecibo(sol.recibo_id, responsavelCancelamento, motivoCompleto);
+        const cancelResult = await cancelMockRecibo(sol.recibo_id, responsavelCancelamento, motivoCompleto, analisadoPorNome);
         if (!cancelResult.success) {
           console.error('[CANCEL_AUDIT] Falha ao processar o cancelamento do recibo associado no Supabase.', cancelResult);
           return {
@@ -1082,28 +1027,21 @@ export async function processarAnaliseSolicitacao(
         }
       }
 
-      // 2. Atualizar a tabela de solicitações de cancelamento no Supabase
+      // 2. Atualizar a tabela de solicitações de cancelamento no Supabase (seja aprovada ou recusada)
       const payloadSolicitacao = {
-        id: solicitacaoId,
         status: novoStatus,
         analisado_por: analisadoPorId,
         analisado_por_nome: analisadoPorNome,
         analisado_em: analisadoEm,
         observacao_admin: observacaoAnalise || null
       };
-      console.log('[CANCEL_AUDIT] [ETAPA 2] Payload UPDATE solicitação:', payloadSolicitacao);
+      console.log('[CANCEL_AUDIT] Payload UPDATE solicitação:', payloadSolicitacao);
 
-      const { error: sError } = await supabase.from('solicitacoes_cancelamento_recibos').update({
-        status: novoStatus,
-        analisado_por: analisadoPorId,
-        analisado_por_nome: analisadoPorNome,
-        analisado_em: analisadoEm,
-        observacao_admin: observacaoAnalise || null
-      }).eq('id', solicitacaoId);
+      const { error: sError } = await supabase.from('solicitacoes_cancelamento_recibos').update(payloadSolicitacao).eq('id', solicitacaoId);
 
       if (sError) {
         console.error(
-          '[CANCEL_AUDIT] [ETAPA 2] Erro Supabase ao atualizar solicitação de cancelamento:',
+          '[CANCEL_AUDIT] Erro Supabase ao atualizar solicitação de cancelamento:',
           sError.message,
           sError.details,
           sError.hint,
@@ -1116,7 +1054,7 @@ export async function processarAnaliseSolicitacao(
           errorDetails: sError
         };
       }
-      console.log('[CANCEL_AUDIT] [ETAPA 2] Solicitação atualizada com sucesso no Supabase.');
+      console.log('[CANCEL_AUDIT] Solicitação atualizada com sucesso no Supabase.');
     } catch (e: any) {
       console.error('[CANCEL_AUDIT] Exceção crítica durante processamento de análise de solicitação no Supabase:', e);
       return {
