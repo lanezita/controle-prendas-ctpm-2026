@@ -468,14 +468,12 @@ export async function cancelMockRecibo(reciboId: string, canceladoPor: string, m
       console.log('[CANCEL_AUDIT] [ETAPA 3] Conectando ao Supabase para persistir cancelamento...');
 
       // 1. Atualizar a tabela de lançamentos associada de forma segura usando chaves primárias
-      console.log('[CANCEL_AUDIT] [ETAPA 3] Buscando lançamentos associados para numero_recibo:', numeroRecibo, 'aluno_id:', alunoId, 'turno:', turnoRecibo);
+      console.log('[CANCEL_AUDIT] [ETAPA 3] Buscando lançamentos associados de forma direta por numero_recibo:', numeroRecibo);
       
       const { data: lancamentosData, error: qError } = await supabase
         .from('lancamentos')
         .select('id')
-        .eq('numero_recibo', numeroRecibo)
-        .eq('aluno_id', alunoId)
-        .eq('turno', turnoRecibo);
+        .eq('numero_recibo', numeroRecibo);
 
       if (qError) {
         console.error(
